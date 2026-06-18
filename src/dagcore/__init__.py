@@ -1,31 +1,17 @@
-"""dagcore: a Core / Vanilla DAG system.
+"""dagcore: minimal BPD-style layered signed DAG core.
 
-A small, dependency-free, generic Directed Acyclic Graph (DAG) engine providing:
-
-* Typed nodes carrying arbitrary payloads.
-* Directed, optionally weighted/signed edges.
-* Cycle-safe edge insertion (adding an edge that would create a cycle raises).
-* Graph queries: predecessors, successors, roots, leaves, ancestors, descendants.
-* Topological ordering (Kahn's algorithm) and layered ("round") grouping.
-* A topological execution scheduler that runs node functions and pipes each
-  node's output to its successors.
-
-This is the reusable "core" abstraction that higher-level systems (such as the
-multi-agent signed-DAG in the BPD reference project) can be built on top of.
+Only the core graph structure from ChengcanWu/BPD's ``mas/graph.py`` is exposed:
+layered node indexing, signed edge storage, edge updates, and edge queries.
+No agents, LLM calls, schedulers, detection, or repair algorithms are included.
 """
 
-from .graph import DAG, Edge, Node
-from .errors import CycleError, GraphError, NodeNotFoundError
-from .executor import Executor, ExecutionResult
+from .errors import GraphError, InvalidEdgeError, NodeNotFoundError
+from .graph import EdgeGraph
 
 __all__ = [
-    "DAG",
-    "Node",
-    "Edge",
-    "Executor",
-    "ExecutionResult",
+    "EdgeGraph",
     "GraphError",
-    "CycleError",
+    "InvalidEdgeError",
     "NodeNotFoundError",
 ]
 

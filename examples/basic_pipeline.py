@@ -1,33 +1,23 @@
-"""A minimal data-flow pipeline built on the dagcore engine.
+"""Minimal EdgeGraph example.
 
-Run:  python examples/basic_pipeline.py
+Run: python examples/basic_pipeline.py
 """
 
-from dagcore import DAG, Executor
+from dagcore import EdgeGraph
 
 
 def main() -> None:
-    g = DAG()
+    graph = EdgeGraph([2, 1])
 
-    # Source node: a constant value (no func -> emits its data).
-    g.add_node("load", data=10)
+    graph.update_edge(0, 1, 1, 1, 1)
+    graph.update_edge(0, 2, 1, 1, -1)
 
-    # Transform nodes read predecessor outputs from the `inputs` mapping.
-    g.add_node("double", func=lambda inputs: inputs["load"] * 2)
-    g.add_node("inc", func=lambda inputs: inputs["load"] + 1)
-    g.add_node("combine", func=lambda inputs: inputs["double"] + inputs["inc"])
+    sender_idx = graph.node_index(0, 1)
+    receiver_idx = graph.node_index(1, 1)
 
-    g.add_edge("load", "double")
-    g.add_edge("load", "inc")
-    g.add_edge("double", "combine")
-    g.add_edge("inc", "combine")
-
-    result = Executor(g).run()
-
-    print("Topological order:", result.order)
-    print("Layers          :", result.generations)
-    print("Outputs         :", result.outputs)
-    print("Final           :", result.outputs["combine"])  # 10*2 + (10+1) = 31
+    print("connections:", graph.connections)
+    print("outgoing from round 0 agent 1:", graph.outgoing_edges(sender_idx))
+    print("incoming to round 1 agent 1:", graph.incoming_edges(receiver_idx))
 
 
 if __name__ == "__main__":
