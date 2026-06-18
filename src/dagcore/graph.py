@@ -201,6 +201,22 @@ class DAG:
         del self._succ[source][target]
         del self._pred[target][source]
 
+    def clear_outgoing_edges(self, source: NodeId) -> int:
+        """Remove every outgoing edge from ``source`` and return the count.
+
+        Returns ``0`` when the node has no outgoing edges.
+
+        This is useful for higher-level signed-DAG workflows that need to
+        discard a node's downstream influence while keeping the node and the
+        rest of the graph intact.
+        """
+        self._require_node(source)
+        targets = list(self._succ[source])
+        for target in targets:
+            del self._succ[source][target]
+            del self._pred[target][source]
+        return len(targets)
+
     def edges(self) -> List[Edge]:
         """Return all edges."""
         out: List[Edge] = []

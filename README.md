@@ -34,6 +34,10 @@
 - **실행 스케줄러(Execution scheduler)** — `Executor`는 각 노드의 `func`를
   의존 순서대로 실행하고, 선행 노드의 출력을 후속 노드로 전달합니다. 공유 컨텍스트,
   계층별 콜백, 엣지 가중치 주입을 선택적으로 지원합니다.
+- **복구/재배선용 기본 연산(Repair-friendly primitive)** — BPD식 상위 알고리즘이
+  특정 노드의 downstream 영향력을 제거해야 할 때 사용할 수 있도록
+  `clear_outgoing_edges(node_id)`를 제공합니다. 이 연산은 해당 노드의 진출 엣지만
+  제거하며 노드와 다른 엣지는 보존합니다.
 
 서드파티 런타임 의존성이 없습니다. 순수 표준 라이브러리만 사용합니다.
 
@@ -130,6 +134,7 @@ print(net)  # 0  (순(net) 부호 영향력)
 | `get_node(id)` / `has_node(id)` / `remove_node(id)` | 노드 접근 / 제거(연결된 엣지도 제거). |
 | `add_edge(src, tgt, weight=None, create_missing=False, **meta)` | 엣지 추가/갱신; 사이클을 만들면 `CycleError` 발생. |
 | `get_edge(src, tgt)` / `has_edge(src, tgt)` / `remove_edge(src, tgt)` | 엣지 접근 / 제거. |
+| `clear_outgoing_edges(id)` | 해당 노드의 모든 진출 엣지를 제거하고 제거 개수를 반환합니다. |
 | `successors(id)` / `predecessors(id)` | 직접 이웃 노드. |
 | `in_degree(id)` / `out_degree(id)` | 진입/진출 차수. |
 | `roots()` / `leaves()` | 소스 / 싱크 노드. |
@@ -175,8 +180,13 @@ python examples/signed_mas_dag.py
 pytest
 ```
 
-스위트(33개 테스트)는 노드/엣지 관리, 사이클 거부, 부호 있는 엣지,
-조회, 위상 정렬 및 계층화, 순회, 그리고 실행 스케줄러를 다룹니다.
+스위트(36개 테스트)는 노드/엣지 관리, 사이클 거부, 부호 있는 엣지,
+진출 엣지 일괄 제거, 조회, 위상 정렬 및 계층화, 순회, 그리고 실행 스케줄러를 다룹니다.
+
+이 프로젝트의 범위는 BPD의 탐지/복구 알고리즘 자체가 아니라 그 기반이 되는
+범용 signed/layered DAG 코어입니다. 노드·부호 있는 엣지·사이클 방지·위상 계층
+실행은 포함하지만, LLM scoring, malicious-agent detection, backward propagation,
+repair policy는 상위 레이어의 책임으로 남겨둡니다.
 
 ---
 
