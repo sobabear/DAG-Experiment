@@ -20,3 +20,7 @@ htmlcov/
 .vscode/
 .idea/
 .DS_Store
+
+# Secrets & run outputs
+.env
+results/
