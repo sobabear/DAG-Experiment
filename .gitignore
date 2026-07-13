@@ -24,3 +24,5 @@ htmlcov/
 # Secrets & run outputs
 .env
 results/
+.worktrees/
+
