@@ -1,8 +1,8 @@
 # Implementation Comparison App — Design Spec
 
 **Date:** 2026-08-08  
-**Status:** Approved; methodology revised to Artificial Analysis–style Index  
-**Repo:** `DAG-Experiment` (keep `dagcore` as the core library; sibling consumer app)
+**Status:** Approved; docs aligned to Artificial Analysis **Coding Agent** protocol (not LLM model Index)  
+**Repo:** `DAG-Experiment` (keep `dagcore`; sibling app under `apps/`)
 
 ---
 
@@ -12,28 +12,28 @@
 
 | Axis | Setting |
 |------|---------|
-| Control | **Same LLM** for all systems under test |
-| Systems built (3) | (1) BPD-paper DAG → `dag-bpd/` (2) Our DAG → `dag-yonsei/` (3) Claude Code–like multi-agent → `general-agent-system/` |
-| Evaluation | [Artificial Analysis Coding Agent Benchmarks](https://artificialanalysis.ai/agents/coding-agents)–style: pass@1, 3 attempts/task, binary verifier; optional time/cost/tokens |
-| Output | Per-system scores + strengths/weaknesses (what works well vs poorly; when DAG helps or hurts) |
+| Control | **Same LLM** for all systems |
+| Systems (3) | `dag-bpd` (BPD paper) · `dag-yonsei` (ours) · `general-agent-system` (Claude Code–like) |
+| Evaluation source | [Coding Agents](https://artificialanalysis.ai/agents/coding-agents) protocol only |
+| Explicit non-goals | [Methodology](https://artificialanalysis.ai/methodology) Language Model Intelligence Index, TTFT, output tok/s as primary scores |
+| Task suite (default) | Artificial Analysis Index components: DeepSWE · Terminal-Bench v2 · SWE-Atlas-QnA |
+| Fallback suite | Custom SE / Terminal / Q&A categories with same scoring formula if public benches unavailable |
+| Output | Per-system `Index_system` + per-benchmark breakdown + time/cost/tokens/turns + qualitative insights |
 
-**Discarded:** subjective 100-point rubric; notes-app / micro-mission lists as primary scoring. Always write **Artificial Analysis** in full (never “AA”).
-
-The three directories are **agent systems we build and compare**, not three unrelated public datasets named like DeepSWE.
+Always write **Artificial Analysis** in full. Do not claim “identical to Artificial Analysis leaderboard numbers” unless the same pinned public suite and runners are used.
 
 ---
 
-## 2. Decisions locked in brainstorming
+## 2. Decisions
 
 | Decision | Choice |
 |----------|--------|
-| Relationship to dagcore | Consumer app in same repo; no required `EdgeGraph` dependency |
-| Repo strategy | Stay in `DAG-Experiment`; do not relocate `src/dagcore` |
-| Folder strategy | Top-level `apps/implementation-comparison/` |
-| Methodology | Artificial Analysis Coding Agent Index–style scoring |
-| Systems under test | `dag-bpd` (BPD paper), `dag-yonsei` (ours), `general-agent-system` (Claude Code–like multi-agent) |
-| LLM | Fixed identical model across the three systems |
-| Task outcome | Binary pass/fail via verifier |
+| dagcore | Unchanged sibling library |
+| App path | `apps/implementation-comparison/` |
+| What we compare | Three **systems we build**, not product brand names alone |
+| What we borrow from Artificial Analysis | Coding Agent **scoring protocol** + default **three public benches** as shared suite |
+| What we do not borrow | LLM model/endpoint methodology as agent primary metrics |
+| Scoring | Binary verifier; pass@1 over 3 attempts; equal-weight Index over 3 benches |
 | Naming | Full name “Artificial Analysis” only |
 
 ---
@@ -44,47 +44,40 @@ The three directories are **agent systems we build and compare**, not three unre
 apps/implementation-comparison/
 ├── README.md
 ├── implementation-comparison-plan.md
-├── dag-bpd/
-│   └── runs/<tool>/
-├── dag-yonsei/
-│   └── runs/<tool>/
-├── general-agent-system/
-│   └── runs/<tool>/
+├── dag-bpd/runs/<variant>/
+├── dag-yonsei/runs/<variant>/
+├── general-agent-system/runs/<variant>/
+├── tasks/                 # suite pin / runner notes
 ├── results/
 ├── src/impl_comparison/
 └── tests/
 ```
-
-| Path | Role |
-|------|------|
-| `implementation-comparison-plan.md` | Research goal, three systems, Artificial Analysis–style scoring |
-| `dag-bpd/`, `dag-yonsei/`, `general-agent-system/` | Agent system implementations + `runs/<variant>/` |
-| `results/` | Per-system scores, comparison table, insights |
-| `src/impl_comparison/` | Optional aggregation harness |
 
 ---
 
 ## 4. Scoring (summary)
 
 ```text
-task_score = mean(attempt_1, attempt_2, attempt_3)   # each in {0,1}
-S_system   = mean(task_scores for that system)
+task_score     = mean(attempt_1..3) ∈ [0,1]
+S_bench        = mean(task_scores in bench)
+Index_system   = mean(S_DeepSWE, S_Terminal-Bench_v2, S_SWE-Atlas-QnA)
 ```
 
-Compare `S_dag-bpd`, `S_dag-yonsei`, `S_general-agent-system` under the **same LLM** and shared tasks. Record variant = `(system_id, llm, settings)`. Capture qualitative insights: strengths, failure modes, when DAG helps or hurts.
+Compare three systems’ Index and breakdowns under the same LLM and suite.
 
 ---
 
 ## 5. Boundaries
 
-**In scope:** layout, research framing, Artificial Analysis–style methodology, three agent systems.  
-**Out of scope (later):** full system implementations, shared task suite/verifiers, automated drivers, cost telemetry if unavailable.
+**In scope:** research framing, protocol documentation, folder layout, suite decision (default + fallback).  
+**Out of scope (later):** implementing the three agents; wiring public bench runners; cost telemetry if unavailable.
 
 ---
 
-## 6. Success criteria (current revision)
+## 6. Success criteria (doc revision)
 
-- [x] Three systems framed: BPD DAG, Yonsei DAG, Claude Code–like multi-agent
-- [x] Same-LLM control + Artificial Analysis–style scoring documented
-- [x] Research goal (when DAG helps; implementation insights) in README and plan
-- [x] Old 5-dimension rubric removed from plan
+- [x] Coding Agents vs LLM methodology distinction documented
+- [x] Table: Artificial Analysis Index axes vs this experiment’s axes
+- [x] Task suite default = public 3 benches; fallback = custom 3 categories
+- [x] Index_system = equal-weight three benches; systems are rows under comparison
+- [x] README and plan agree
