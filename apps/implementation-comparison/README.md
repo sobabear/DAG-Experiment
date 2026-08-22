@@ -33,12 +33,12 @@
 
 | | Artificial Analysis Coding Agent Index | 이 실험 |
 |--|----------------------------------------|---------|
-| **가로(과업)** | DeepSWE · Terminal-Bench v2 · SWE-Atlas-QnA (동일 가중) | **동일 3벤치를 공유 태스크 스위트로 사용** (권장·기본) |
+| **가로(과업)** | DeepSWE · Terminal-Bench v2 · SWE-Atlas-QnA (동일 가중) | **자체 30-task suite**: SE 10 · Terminal 10 · Repository Q&A 10 |
 | **세로(비교 단위)** | agent / harness / model variant | 우리가 만든 **시스템 3종** (동일 LLM) |
 | **점수** | variant마다 Index | 시스템마다 `Index_system` 후 세 행 비교 |
 
 ```text
-Index_system = mean(S_DeepSWE, S_Terminal-Bench_v2, S_SWE-Atlas-QnA)
+Index_system = mean(S_SE, S_Terminal, S_Repository_QnA)
 ```
 
 ## 실험으로 보고자 하는 것
@@ -58,3 +58,49 @@ Index_system = mean(S_DeepSWE, S_Terminal-Bench_v2, S_SWE-Atlas-QnA)
 
 - 연구 목적·채점·시스템 정의: `implementation-comparison-plan.md`
 - 레이아웃 스펙: `docs/superpowers/specs/2026-08-08-implementation-comparison-design.md`
+
+## 로컬 테스트
+
+앱 디렉터리에서 가상환경을 사용해 설치하고 테스트합니다:
+
+```sh
+python -m pip install -e '.[dev]'
+python -m pytest
+PYTHONPATH=src:../../../src python -m impl_comparison.compare
+```
+
+`--suite fallback`(각 영역 1태스크)은 CI smoke입니다. **The 30-task suite is now executable** with `--suite research-30` after configuring the same real LLM for all three systems through environment variables (never files):
+
+```sh
+export IMPL_COMPARISON_LLM_PROVIDER=openai-compatible
+export IMPL_COMPARISON_LLM_MODEL=<model-id>
+# optional:
+export IMPL_COMPARISON_LLM_ENDPOINT=<openai-compatible-base-url>
+export OPENAI_API_KEY=<secret>   # OpenAI SDK reads this; do not copy into files
+
+PYTHONPATH=src:../../../src python -m impl_comparison.compare --suite research-30
+```
+
+Missing `IMPL_COMPARISON_LLM_PROVIDER` or `IMPL_COMPARISON_LLM_MODEL` is an error. research-30 does not silently substitute a harness Fake LLM. Optional `apps/implementation-comparison/.env.example` lists empty placeholders; never commit `.env`. The harness does **not** auto-load `.env`. Export variables into the process (or `set -a; source .env`) before running.
+
+For a real-LLM run, install optional OpenAI support next to the command:
+
+```sh
+python -m pip install -e '.[dev,openai]'
+```
+
+`Index_system` is **correctness-only** (equal-weight SE / Terminal / QnA pass@1). Time, cost, tokens, and turns are reported beside Index and are not part of the score.
+
+공개 DeepSWE · Terminal-Bench v2 · SWE-Atlas-QnA는 아직 연결하지 않았습니다. This is a custom suite and cannot be compared numerically with the public Artificial Analysis leaderboard.
+
+OpenAI 지원은 선택 사항이며 fallback smoke 테스트에는 필요하지 않습니다.
+
+## 확장 평가 스위트 (30 tasks)
+
+현재 3개 태스크는 아키텍처 차이를 충분히 드러내지 못하므로, 연구용 스위트는 다음 30개로 확장합니다:
+
+- **Software Engineering 10개**: 다중 파일 수정, API/스키마 변경, 동시성, 캐시, 보안, 장애 복구, 리팩터링, 성능 개선
+- **Terminal / Agentic Workflow 10개**: 로그 분석, 다단계 명령, timeout, checksum, 대용량 파일, rollback, 병렬 검사
+- **Repository Q&A 10개**: call graph, 설정 영향, root cause, 의존성, 보안, 테스트 공백, 성능, 상태 흐름, 장애 복구, 설계 trade-off
+
+각 태스크는 숨겨진 verifier를 사용하고 3회 독립 시도합니다. Fake LLM 결과는 harness 검증용이며 연구 결과에 포함하지 않습니다.

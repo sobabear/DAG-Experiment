@@ -109,9 +109,11 @@ Index_system = mean(S_DeepSWE, S_Terminal-Bench_v2, S_SWE-Atlas-QnA)
 | 항목 | 상태 |
 |------|------|
 | 채점 공식 (pass@1 × 3, binary, 3성분 동일가중) | **확정** |
-| 태스크 본문 | **기본안 = 공개 3벤치** (§3.1). 실행 전 라이선스·러너 가능 여부 확인 후, 불가 시 §3.2로 전환 |
+| 태스크 본문 | **실행 가능:** `python -m impl_comparison.compare --suite research-30` (§8 자체 30-task suite). 공개 3벤치는 추후 runner·라이선스 확인 후 별도 실행 |
 
-공유 참조 위치(예정): `tasks/` 또는 벤치별 upstream checkout + 버전 핀.
+공유 참조 위치: `tasks/research-30/` 및 `src/impl_comparison/research_suite.py`. 공개 벤치 checkout은 아직 연결하지 않는다.
+
+연구 비교는 공개 3벤치가 아니라 §8의 자체 30-task suite를 `--suite research-30`으로 실행한다. 공개 DeepSWE · Terminal-Bench v2 · SWE-Atlas-QnA가 연결되기 전까지 모든 결과에는 **자체 스위트이며 Artificial Analysis 공개 리더보드 수치와 직접 비교할 수 없음**을 표시한다. `Index_system`은 correctness-only이며 time / cost / tokens / turns는 Index에 넣지 않는다.
 
 ---
 
@@ -229,3 +231,50 @@ results/
 
 - [Artificial Analysis — Coding Agents](https://artificialanalysis.ai/agents/coding-agents)  
 - [Artificial Analysis — Methodology](https://artificialanalysis.ai/methodology) (LLM 쪽과 **구분**용)
+
+---
+
+## 8. 연구용 30-task suite
+
+기존 fallback 스위트의 3개 태스크는 시스템 간 차이를 충분히 측정하지 못한다. 연구 실행은 **Software Engineering, Terminal / Agentic Workflow, Repository Q&A를 각각 10개씩 총 30개**로 확장하며, 다음 명령으로 실행한다 (동일 LLM은 환경 변수로만 설정):
+
+```sh
+export IMPL_COMPARISON_LLM_PROVIDER=openai-compatible
+export IMPL_COMPARISON_LLM_MODEL=<model-id>
+export IMPL_COMPARISON_LLM_ENDPOINT=<optional-base-url>
+export OPENAI_API_KEY=<secret>
+
+python -m impl_comparison.compare --suite research-30
+```
+
+자격 증명은 파일에 쓰지 않는다. provider·model 환경 변수가 없으면 오류이며 Fake LLM으로 조용히 대체하지 않는다.
+
+### 8.1 Software Engineering (10)
+
+다중 파일 버그 수정, API 인터페이스 변경, 데이터 모델·스키마 변경, 동시성 race condition, 캐시 무효화, 네트워크 retry·timeout, 인증·권한 보안, hidden edge case, 모듈 리팩터링, 성능 병목 개선을 각각 하나의 태스크로 구성한다.
+
+### 8.2 Terminal / Agentic Workflow (10)
+
+깨진 빌드 분석, 로그 기반 설정 수정, 다중 파일 변환, 실패 테스트 분류, 프로세스 timeout·재시작, checksum 산출물 검증, 환경변수 진단, 대용량 streaming 처리, rollback 후 재실행, 병렬 검사·결과 통합을 각각 하나의 태스크로 구성한다.
+
+### 8.3 Repository Q&A (10)
+
+end-to-end call graph, 설정 영향, root cause, 의존성·변경 영향, 보안 공격 경로, 테스트 공백, 성능 병목, 데이터·상태 흐름, 장애 복구 경로, 아키텍처 trade-off를 각각 하나의 태스크로 구성한다.
+
+### 8.4 난이도와 공정성 통제
+
+- 세 시스템은 동일한 task prompt, 초기 workspace snapshot, LLM, tool schema, timeout, token budget을 사용한다.
+- 각 attempt는 새 workspace에서 독립 실행하며, 이전 attempt의 transcript·artifact를 볼 수 없다.
+- verifier와 hidden test는 prompt에 포함하지 않는다.
+- 연구 점수에는 실제 LLM 실행만 포함한다. Fake LLM은 harness와 CI smoke test 전용이다.
+- 각 태스크는 binary verifier를 사용하고, 태스크당 3회 시도한다.
+- 결과는 영역별 점수와 전체 Index를 모두 기록한다.
+
+```text
+S_SE       = mean(10개 Software Engineering task score)
+S_Terminal = mean(10개 Terminal task score)
+S_QnA      = mean(10개 Repository Q&A task score)
+Index      = mean(S_SE, S_Terminal, S_QnA)
+```
+
+이 30개는 공개 DeepSWE·Terminal-Bench v2·SWE-Atlas-QnA 원본이 아니다. 따라서 결과에는 **자체 스위트이며 Artificial Analysis 공개 리더보드 수치와 직접 비교할 수 없음**을 명시한다.

@@ -24,5 +24,10 @@ htmlcov/
 # Secrets & run outputs
 .env
 results/
+!apps/implementation-comparison/results/
+apps/implementation-comparison/results/**
+!apps/implementation-comparison/results/research-30/
+apps/implementation-comparison/results/research-30/**
+!apps/implementation-comparison/results/research-30/comparison.md
 .worktrees/
 

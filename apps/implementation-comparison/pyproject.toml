@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "implementation-comparison"
+version = "0.1.0"
+description = "Common protocol and harness for agent implementation comparisons."
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+openai = ["openai"]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
