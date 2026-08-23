@@ -7,6 +7,7 @@ import pytest
 from impl_comparison.coding_llm import WorkspaceAwareLLM
 from impl_comparison.protocol import ModelConfig
 from impl_comparison.research_suite import research_tasks
+from impl_comparison.scoring import as_points
 
 
 def test_index_rejects_missing_or_mixed_areas():
@@ -89,9 +90,10 @@ def test_render_research_markdown_includes_index_and_disclaimer():
     assert "Artificial Analysis" in markdown
     assert "cannot be compared numerically" in lowered
     assert "leaderboard" in lowered
+    assert "0–100" in markdown or "0-100" in markdown
     for system_id in summary:
         assert system_id in markdown
-        assert "{:.3f}".format(summary[system_id]["index"]) in markdown
+        assert "{:.1f}".format(as_points(summary[system_id]["index"])) in markdown
 
 
 def test_one_system_one_task_per_area_has_index(tmp_path):
@@ -128,6 +130,7 @@ def test_one_system_one_task_per_area_has_index(tmp_path):
     score_path = tmp_path / "general-agent-system" / "score.json"
     written = json.loads(score_path.read_text(encoding="utf-8"))
     assert written["index"] == pytest.approx(payload["index"])
+    assert written["index_100"] == pytest.approx(as_points(payload["index"]))
     assert written["areas"] == areas
     metrics = written["metrics"]
     assert "time_per_task_seconds" in metrics
@@ -274,33 +277,39 @@ def test_research_30_without_env_raises_and_does_not_write_repo_scores(
         assert "fake/workspace-aware" not in lowered
 
 
-def test_committed_research_30_comparison_is_pilot_placeholder():
+def test_committed_research_30_comparison_file():
     path = (
         Path(__file__).resolve().parents[1] / "results" / "research-30" / "comparison.md"
     )
     assert path.is_file()
     text = path.read_text(encoding="utf-8")
     lowered = text.lower()
-    assert "not been executed" in lowered
     assert "Artificial Analysis" in text
     assert "custom suite" in lowered
     assert "cannot be compared numerically" in lowered
     assert re.search(r"\bAA\b", text) is None
-    for heading in (
-        "DAG advantage",
-        "DAG overhead",
-        "general-system flexibility",
-        "task categories with no separation",
-    ):
-        assert heading.lower() in lowered
-    assert "awaiting real-llm pilot" in lowered
-    _assert_harness_does_not_autoload_env(text)
     banned = ("workspaceawarellm", "workspace-aware", "fake/workspace-aware")
     assert not any(token in lowered for token in banned)
+    if "not been executed" in lowered:
+        for heading in (
+            "DAG advantage",
+            "DAG overhead",
+            "general-system flexibility",
+            "task categories with no separation",
+        ):
+            assert heading.lower() in lowered
+        assert "awaiting real-llm pilot" in lowered
+        _assert_harness_does_not_autoload_env(text)
+        for system_id in ("dag-bpd", "dag-yonsei", "general-agent-system"):
+            assert not re.search(
+                r"\|\s*" + re.escape(system_id) + r"\s*\|\s*[-+]?\d", text
+            )
+        return
     for system_id in ("dag-bpd", "dag-yonsei", "general-agent-system"):
-        assert not re.search(
+        assert re.search(
             r"\|\s*" + re.escape(system_id) + r"\s*\|\s*[-+]?\d", text
         )
+    assert "0–100" in text or "0-100" in text or "100 × pass@1" in text
 
 
 def test_readme_documents_research_30_command_and_env_vars():

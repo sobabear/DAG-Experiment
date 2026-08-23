@@ -308,6 +308,7 @@ class OpenAICompatibleLLM:
                     kwargs[key] = value
         if request.metadata:
             kwargs["metadata"] = _safe_options(request.metadata)
+        _apply_gpt56_chat_completions_compat(kwargs)
         try:
             response = self._client.chat.completions.create(**kwargs)
         except Exception as exc:
@@ -317,6 +318,26 @@ class OpenAICompatibleLLM:
                 ) from exc
             raise
         return normalize_response(response)
+
+
+def _uses_gpt56_chat_compat(model: str) -> bool:
+    name = str(model or "").strip().lower()
+    return name.startswith("gpt-5.6")
+
+
+def _apply_gpt56_chat_completions_compat(kwargs):
+    """gpt-5.6 chat.completions rejects temperature=0, max_tokens, and tools+reasoning."""
+    if not _uses_gpt56_chat_compat(str(kwargs.get("model") or "")):
+        return
+    temperature = kwargs.get("temperature")
+    if temperature is not None and float(temperature) != 1.0:
+        kwargs.pop("temperature", None)
+    elif "temperature" in kwargs:
+        kwargs.pop("temperature", None)
+    if "max_tokens" in kwargs:
+        kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+    if kwargs.get("tools") and "reasoning_effort" not in kwargs:
+        kwargs["reasoning_effort"] = "none"
 
 
 def _to_openai_messages(messages):

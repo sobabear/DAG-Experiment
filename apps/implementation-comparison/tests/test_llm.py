@@ -458,3 +458,92 @@ def test_openai_adapter_converts_internal_tool_messages_to_provider_shape():
     assert tool_msg["role"] == "tool"
     assert tool_msg["tool_call_id"] == "call-1"
     assert tool_msg["content"] == '{"content": "x"}'
+
+
+def _spy_openai_client():
+    class Completions:
+        def create(self, **kwargs):
+            self.kwargs = kwargs
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    class Chat:
+        def __init__(self):
+            self.completions = Completions()
+
+    class Client:
+        def __init__(self):
+            self.chat = Chat()
+
+    return Client()
+
+
+def test_openai_adapter_gpt56_luna_omits_unsupported_sampling_params():
+    client = _spy_openai_client()
+    adapter = OpenAICompatibleLLM(
+        ModelConfig(provider="openai-compatible", model="gpt-5.6-luna"),
+        client=client,
+    )
+    adapter.complete(
+        LLMRequest(
+            messages=[{"role": "user", "content": "hi"}],
+            model=ModelConfig(
+                provider="openai-compatible",
+                model="gpt-5.6-luna",
+                temperature=0.0,
+                max_tokens=128,
+            ),
+        )
+    )
+
+    kwargs = client.chat.completions.kwargs
+    assert "temperature" not in kwargs
+    assert "max_tokens" not in kwargs
+    assert kwargs["max_completion_tokens"] == 128
+
+
+def test_openai_adapter_gpt56_luna_disables_reasoning_for_chat_tools():
+    client = _spy_openai_client()
+    adapter = OpenAICompatibleLLM(
+        ModelConfig(provider="openai-compatible", model="gpt-5.6-luna"),
+        client=client,
+    )
+    adapter.complete(
+        LLMRequest(
+            messages=[{"role": "user", "content": "edit"}],
+            model=ModelConfig(provider="openai-compatible", model="gpt-5.6-luna"),
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ],
+        )
+    )
+
+    kwargs = client.chat.completions.kwargs
+    assert kwargs["reasoning_effort"] == "none"
+    assert "temperature" not in kwargs
+
+
+def test_openai_adapter_gpt56_luna_keeps_explicit_reasoning_effort():
+    client = _spy_openai_client()
+    adapter = OpenAICompatibleLLM(
+        ModelConfig(
+            provider="openai-compatible",
+            model="gpt-5.6-luna",
+            extra={"reasoning_effort": "low"},
+        ),
+        client=client,
+    )
+    adapter.complete(
+        LLMRequest(
+            messages=[],
+            model=ModelConfig(provider="openai-compatible", model="gpt-5.6-luna"),
+            tools=[{"type": "function", "function": {"name": "read"}}],
+        )
+    )
+
+    assert client.chat.completions.kwargs["reasoning_effort"] == "low"

@@ -23,6 +23,11 @@ def area_score(task_scores: Iterable[float]) -> float:
     return bench_score(task_scores)
 
 
+def as_points(rate: float) -> float:
+    """Display pass@1 as 0–100, matching Artificial Analysis Coding Agent Index."""
+    return round(float(rate) * 100.0, 1)
+
+
 def index_score(benchmarks: Mapping[str, float]) -> float:
     required = ("deepswe", "terminal_bench_v2", "swe_atlas_qna")
     missing = [name for name in required if name not in benchmarks]

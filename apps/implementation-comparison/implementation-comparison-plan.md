@@ -139,6 +139,7 @@ Index_system = (S_DeepSWE + S_Terminal-Bench_v2 + S_SWE-Atlas-QnA) / 3
 ```
 
 - Higher is better.  
+- 표와 `index_100`은 **0–100** (`100 × pass@1`)으로 적어 [Artificial Analysis Coding Agent Index](https://artificialanalysis.ai/agents/coding-agents)와 같은 눈금이다. 내부 집계는 0–1 pass@1이다.  
 - Index만 보지 말고 **벤치별 breakdown**을 항상 함께 보고한다.
 
 ### 4.4 시스템 비교표 (핵심 산출)
@@ -199,6 +200,7 @@ results/
   "llm": "…",
   "settings": "…",
   "index": 0.0,
+  "index_100": 0.0,
   "benchmarks": {
     "deepswe": 0.0,
     "terminal_bench_v2": 0.0,

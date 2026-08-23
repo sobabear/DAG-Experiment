@@ -13,7 +13,14 @@ from .coding_llm import WorkspaceAwareLLM
 from .llm_config import allow_fake_from_env, llm_from_env
 from .protocol import ExecutionPolicy, ModelConfig, RunLimits, RunRequest, TaskSpec
 from .runner import run_agent
-from .scoring import area_scores_from_records, bench_score, index_score, research_index, task_score
+from .scoring import (
+    area_scores_from_records,
+    as_points,
+    bench_score,
+    index_score,
+    research_index,
+    task_score,
+)
 from .suite import FALLBACK_TASKS
 from .suite import SUITE_DISCLAIMER as FALLBACK_DISCLAIMER
 from .suite import SUITE_ID as FALLBACK_SUITE_ID
@@ -118,6 +125,10 @@ def evaluate_system(
             source = out_dir / "workspace" / task.task_id / attempt_id
             if source.exists():
                 raise FileExistsError(str(source))
+            print(
+                "running {} {} attempt {}".format(system_id, task.task_id, attempt_id),
+                flush=True,
+            )
             materialize(task, source)
             request = RunRequest(
                 task=task,
@@ -150,8 +161,16 @@ def evaluate_system(
             attempt_bits.append(bit)
             attempt_ids.append(attempt_id)
             reasons.append(result.verifier_result.reason)
-            total_time += result.wall_time
-            total_turns += result.turns
+            print(
+                "finished {} {} attempt {} passed={} status={}".format(
+                    system_id,
+                    task.task_id,
+                    attempt_id,
+                    bit,
+                    result.status,
+                ),
+                flush=True,
+            )
             usage["input_tokens"] += result.usage.input_tokens
             usage["output_tokens"] += result.usage.output_tokens
             usage["cached_tokens"] += result.usage.cached_tokens
@@ -173,15 +192,19 @@ def evaluate_system(
     n_slots = max(1, len(list(tasks)) * attempts)
     if is_research:
         areas = area_scores_from_records(task_records)
+        index = research_index(areas)
         payload: Dict[str, object] = {
             "system_id": system_id,
             "llm": llm_label,
             "settings": (
                 "identical ModelConfig across systems; research-30 suite; "
-                "Index is correctness-only (time/cost/tokens/turns excluded)"
+                "Index is correctness-only (time/cost/tokens/turns excluded); "
+                "index_100 is 100 x pass@1 like Artificial Analysis Coding Agent Index"
             ),
-            "index": research_index(areas),
+            "index": index,
+            "index_100": as_points(index),
             "areas": areas,
+            "areas_100": {name: as_points(value) for name, value in areas.items()},
             "tasks": task_records,
             "suite": research_suite.SUITE_ID,
             "disclaimer": research_suite.SUITE_DISCLAIMER,
@@ -203,12 +226,17 @@ def evaluate_system(
             name: bench_score(by_bench[name])
             for name in ("deepswe", "terminal_bench_v2", "swe_atlas_qna")
         }
+        index = index_score(benches)
         payload = {
             "system_id": system_id,
             "llm": llm_label,
             "settings": "deterministic WorkspaceAwareLLM; fallback suite",
-            "index": index_score(benches),
+            "index": index,
+            "index_100": as_points(index),
             "benchmarks": benches,
+            "benchmarks_100": {
+                name: as_points(value) for name, value in benches.items()
+            },
             "tasks": task_records,
             "suite": FALLBACK_SUITE_ID,
             "disclaimer": FALLBACK_DISCLAIMER,
@@ -309,10 +337,10 @@ def _insights(
         areas = payload["areas"]  # type: ignore[index]
         lines = [
             "# {}\n".format(system_id),
-            "- Index: {:.3f}".format(payload["index"]),  # type: ignore[arg-type]
-            "- SE: {:.3f}".format(areas["se"]),
-            "- Terminal: {:.3f}".format(areas["terminal"]),
-            "- QnA: {:.3f}".format(areas["qna"]),
+            "- Index: {:.1f}".format(as_points(payload["index"])),  # type: ignore[arg-type]
+            "- SE: {:.1f}".format(as_points(areas["se"])),
+            "- Terminal: {:.1f}".format(as_points(areas["terminal"])),
+            "- QnA: {:.1f}".format(as_points(areas["qna"])),
             "",
             research_suite.SUITE_DISCLAIMER,
             "",
@@ -321,10 +349,10 @@ def _insights(
     benches = payload["benchmarks"]  # type: ignore[index]
     lines = [
         "# {}\n".format(system_id),
-        "- Index: {:.3f}".format(payload["index"]),  # type: ignore[arg-type]
-        "- DeepSWE analog (se-add): {:.3f}".format(benches["deepswe"]),
-        "- Terminal analog: {:.3f}".format(benches["terminal_bench_v2"]),
-        "- QnA analog: {:.3f}".format(benches["swe_atlas_qna"]),
+        "- Index: {:.1f}".format(as_points(payload["index"])),  # type: ignore[arg-type]
+        "- DeepSWE analog (se-add): {:.1f}".format(as_points(benches["deepswe"])),
+        "- Terminal analog: {:.1f}".format(as_points(benches["terminal_bench_v2"])),
+        "- QnA analog: {:.1f}".format(as_points(benches["swe_atlas_qna"])),
         "",
         FALLBACK_DISCLAIMER,
         "",
@@ -340,6 +368,10 @@ def _render_markdown(summary: Dict[str, Dict[str, object]]) -> str:
         "",
         "LLM is identical (`WorkspaceAwareLLM`). Architecture is the independent variable.",
         "",
+        "Index and area scores are **0–100** (100 × pass@1), the same presentation as "
+        "the [Artificial Analysis Coding Agent Index](https://artificialanalysis.ai/agents/coding-agents). "
+        "They are not public DeepSWE / Terminal-Bench / SWE-Atlas-QnA leaderboard numbers.",
+        "",
         "| 시스템 | Index | DeepSWE analog | Terminal analog | QnA analog | Time/task (s) | Turns |",
         "|--------|-------|----------------|-----------------|------------|---------------|-------|",
     ]
@@ -347,12 +379,12 @@ def _render_markdown(summary: Dict[str, Dict[str, object]]) -> str:
         benches = payload["benchmarks"]  # type: ignore[index]
         metrics = payload["metrics"]  # type: ignore[index]
         lines.append(
-            "| {} | {:.3f} | {:.3f} | {:.3f} | {:.3f} | {:.3f} | {} |".format(
+            "| {} | {:.1f} | {:.1f} | {:.1f} | {:.1f} | {:.3f} | {} |".format(
                 system_id,
-                payload["index"],
-                benches["deepswe"],
-                benches["terminal_bench_v2"],
-                benches["swe_atlas_qna"],
+                as_points(payload["index"]),
+                as_points(benches["deepswe"]),
+                as_points(benches["terminal_bench_v2"]),
+                as_points(benches["swe_atlas_qna"]),
                 metrics["time_per_task_seconds"],
                 metrics["turns_total"],
             )
@@ -381,6 +413,10 @@ def _render_research_markdown(summary: Dict[str, Dict[str, object]]) -> str:
         "Index is correctness-only: time, cost, tokens, and turns are reported "
         "separately and are not part of Index_system.",
         "",
+        "Index and area scores are **0–100** (100 × pass@1), the same presentation as "
+        "the [Artificial Analysis Coding Agent Index](https://artificialanalysis.ai/agents/coding-agents). "
+        "This custom suite cannot be compared numerically with that public leaderboard.",
+        "",
         "| 시스템 | Index | SE | Terminal | QnA | Time/task (s) | Cost/task (USD) | Tokens (in/out/cache) | Turns |",
         "|--------|-------|----|----------|-----|---------------|-----------------|-----------------------|-------|",
     ]
@@ -394,12 +430,12 @@ def _render_research_markdown(summary: Dict[str, Dict[str, object]]) -> str:
             tokens.get("cached_tokens", 0),
         )
         lines.append(
-            "| {} | {:.3f} | {:.3f} | {:.3f} | {:.3f} | {:.3f} | {:.4f} | {} | {} |".format(
+            "| {} | {:.1f} | {:.1f} | {:.1f} | {:.1f} | {:.3f} | {:.4f} | {} | {} |".format(
                 system_id,
-                payload["index"],
-                areas["se"],
-                areas["terminal"],
-                areas["qna"],
+                as_points(payload["index"]),
+                as_points(areas["se"]),
+                as_points(areas["terminal"]),
+                as_points(areas["qna"]),
                 metrics["time_per_task_seconds"],
                 metrics["cost_per_task_usd"],
                 token_text,

@@ -1,6 +1,12 @@
 import inspect
 
-from impl_comparison.scoring import bench_score, index_score, research_index, task_score
+from impl_comparison.scoring import (
+    as_points,
+    bench_score,
+    index_score,
+    research_index,
+    task_score,
+)
 
 
 def test_task_score_is_mean_of_three_binary_attempts():
@@ -23,3 +29,10 @@ def test_research_index_is_correctness_only():
     assert "cost" not in names
     assert "tokens" not in names
     assert "turns" not in names
+
+
+def test_as_points_matches_artificial_analysis_0_to_100_scale():
+    assert as_points(1.0) == 100.0
+    assert as_points(0.0) == 0.0
+    assert as_points(2.0 / 3.0) == 66.7
+    assert as_points(0.65) == 65.0

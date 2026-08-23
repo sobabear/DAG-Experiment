@@ -89,9 +89,9 @@ For a real-LLM run, install optional OpenAI support next to the command:
 python -m pip install -e '.[dev,openai]'
 ```
 
-`Index_system` is **correctness-only** (equal-weight SE / Terminal / QnA pass@1). Time, cost, tokens, and turns are reported beside Index and are not part of the score.
+`Index_system` is **correctness-only** (equal-weight SE / Terminal / QnA pass@1). Reports use a **0–100** scale (`100 × pass@1`), matching how the [Artificial Analysis Coding Agent Index](https://artificialanalysis.ai/agents/coding-agents) presents scores. Time, cost, tokens, and turns are reported beside Index and are not part of the score.
 
-공개 DeepSWE · Terminal-Bench v2 · SWE-Atlas-QnA는 아직 연결하지 않았습니다. This is a custom suite and cannot be compared numerically with the public Artificial Analysis leaderboard.
+공개 DeepSWE · Terminal-Bench v2.1 · SWE-Atlas-QnA는 아직 연결하지 않았습니다. This is a custom suite and cannot be compared numerically with the public Artificial Analysis leaderboard. A 100.0 on the 3-task Fake LLM smoke suite is a ceiling, not a public-leaderboard-style result.
 
 OpenAI 지원은 선택 사항이며 fallback smoke 테스트에는 필요하지 않습니다.
 
