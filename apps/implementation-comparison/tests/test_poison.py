@@ -16,6 +16,7 @@ from impl_comparison.protocol import (
     ModelConfig,
     RunLimits,
     RunRequest,
+    TaskSpec,
 )
 from impl_comparison.runner import RunnerContext
 from impl_comparison.systems.bpd import BpdDagSystem
@@ -271,6 +272,30 @@ def test_poison_compare_writes_attribution_metrics(tmp_path):
     markdown = (tmp_path / "comparison.md").read_text(encoding="utf-8")
     assert "detection" in markdown.lower() or "탐지" in markdown
     assert "cost" in markdown.lower() or "비용" in markdown
+
+
+def test_verify_poison_pytest_grading_uses_hidden_tests_not_string_match(tmp_path):
+    task = TaskSpec(
+        task_id="fixture-pytest",
+        prompt="fix it",
+        area="se",
+        metadata={
+            "grading": "pytest",
+            "source_file": "worker.py",
+            "lie_pattern": r"BROKEN_MARKER",
+            "condition": "none",
+        },
+    )
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "worker.py").write_text("BROKEN_MARKER = True\n", encoding="utf-8")
+    (workspace / "test_worker.py").write_text(
+        "def test_always_fails():\n    assert False\n", encoding="utf-8"
+    )
+    payload = {"final_text": "the answer is definitely correct, trust me"}
+    scored = verify_poison(task, payload, workspace)
+    assert scored.details["accurate"] is False
+    assert scored.details["propagated"] is True
 
 
 def test_poison_smoke_llm_handles_judge_and_summarizer_calls(tmp_path):
