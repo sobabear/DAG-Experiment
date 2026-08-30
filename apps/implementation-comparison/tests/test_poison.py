@@ -3,9 +3,12 @@ from impl_comparison.llm import FakeLLM
 from impl_comparison.poison import (
     POISON_TASKS,
     aggregate_proposals,
+    backward_propagate,
+    detect_bpd_outlier,
     grade_output,
     materialize_poison_task,
     poison_task,
+    terminal_scores_from_summaries,
     verify_poison,
 )
 from impl_comparison.protocol import (
@@ -58,6 +61,25 @@ def test_aggregate_proposals_picks_majority_and_flags_outlier():
     assert detected == 0
     assert edges[0] == -1
     assert edges[1] == 1
+
+
+def test_backward_propagate_computes_average_signed_contribution():
+    edges = [[-1, -1, -1], [1, 1, 1], [1, 1, 1]]
+    terminal = [1, 1, 1]
+    assert backward_propagate(edges, terminal) == [-1.0, 1.0, 1.0]
+
+
+def test_detect_bpd_outlier_flags_the_unique_negative_score():
+    assert detect_bpd_outlier([-1.0, 1.0, 1.0]) == 0
+    assert detect_bpd_outlier([-1.0, -1.0, 1.0]) is None
+    assert detect_bpd_outlier([1.0, 1.0, 1.0]) is None
+
+
+def test_terminal_scores_from_summaries_matches_majority_label():
+    scores = terminal_scores_from_summaries(
+        ["timeout is 30", "30", "300 is correct"], gold="30", lie="300"
+    )
+    assert scores == [1, 1, -1]
 
 
 def test_document_condition_writes_notes_agent_condition_does_not(tmp_path):

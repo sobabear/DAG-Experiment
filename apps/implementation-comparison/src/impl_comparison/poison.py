@@ -153,6 +153,52 @@ def aggregate_proposals(
     return str(proposals[winner]), winner, edges, detected
 
 
+def terminal_scores_from_summaries(
+    summaries: Sequence[str],
+    gold: str,
+    lie: str,
+) -> List[int]:
+    """Score each summarizer's final answer against the group's own majority.
+
+    This mirrors BPD's terminal-layer initialization: agreement with the
+    system's own chosen answer, not external ground truth.
+    """
+    labels = [_claim(text, gold, lie) for text in summaries]
+    votes = [label for label in labels if label in ("gold", "lie")]
+    if votes:
+        majority_label = "gold" if votes.count("gold") >= votes.count("lie") else "lie"
+    else:
+        majority_label = labels[0] if labels else "other"
+    return [1 if label == majority_label else -1 for label in labels]
+
+
+def backward_propagate(
+    edge_scores: Sequence[Sequence[int]],
+    terminal_scores: Sequence[int],
+) -> List[float]:
+    """Single closed-form backward pass: S(worker_i) = mean_j g_ij * S(summary_j)."""
+    n_summaries = len(terminal_scores)
+    if n_summaries == 0:
+        return [0.0 for _ in edge_scores]
+    scores: List[float] = []
+    for row in edge_scores:
+        total = sum(g * s for g, s in zip(row, terminal_scores))
+        scores.append(total / float(n_summaries))
+    return scores
+
+
+def detect_bpd_outlier(worker_scores: Sequence[float]) -> Optional[int]:
+    """Flag the poison source only when exactly one worker's score is negative.
+
+    Two or more negative scores are ambiguous at n=3 workers; returning None
+    rather than guessing avoids false attribution.
+    """
+    negative = [index for index, score in enumerate(worker_scores) if score < 0]
+    if len(negative) == 1:
+        return negative[0]
+    return None
+
+
 def _payload_text(payload: Any) -> str:
     if isinstance(payload, dict):
         return str(payload.get("final_text", "") or "")
