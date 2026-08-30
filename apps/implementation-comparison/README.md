@@ -107,16 +107,23 @@ OpenAI 지원은 선택 사항이며 fallback smoke 테스트에는 필요하지
 
 ## Poison / attribution 실험
 
-연구 질문은 Index나 비용이 아니라 **DAG가 심은 거짓을 격리·탐지·복구할 수 있는가**입니다. 작은 QnA 3개(`TIMEOUT_SECONDS` / `LISTEN_PORT` / `MAX_RETRIES`)에 gold와 심은 거짓을 고정하고, 조건은 `none` / `document`(NOTES.md) / `agent`(워커 0 또는 scan 노드에 거짓 주입)입니다.
+연구 질문은 Index나 비용이 아니라 **DAG가 심은 거짓을 격리·탐지·복구할 수 있는가**입니다. 두 세트를 함께 봅니다:
 
-측정: accuracy(최종 답에 gold, 거짓 없음) · propagation(최종 답에 거짓) · detection(오염 출처 표시) · recovery(탐지 + 정답). 비용·토큰은 로그만 남기고 점수에 넣지 않습니다.
+- **통제 (micro-QnA, string-match 채점)**: `TIMEOUT_SECONDS` / `LISTEN_PORT` / `MAX_RETRIES` 3개, gold·거짓 고정.
+- **실제성 (code-verifiable, 숨은 pytest 채점)**: 재시도·캐시 무효화·시간 단위·롤백 순서·락 범위 5개. 정답 여부는 문자열이 아니라 **숨은 pytest 실행 결과**로 판정합니다.
+
+조건은 동일하게 `none` / `document`(NOTES.md) / `agent`(워커 0 또는 scan 노드에 거짓 주입)입니다.
+
+`dag-bpd`는 [BPD 논문](https://arxiv.org/html/2510.19420)(서명된 DAG + 독립 judge + 역전파)에 맞춘 알고리즘을 씁니다: 3개 워커가 제안하면, 3개의 텍스트 전용 "summarizer"가 전체 제안을 보고 각자 최종 답을 내고, 독립 judge가 (제안, 최종 답) 쌍마다 서명 점수(-1/0/+1)를 매기고, 단일 역전파 pass로 워커별 기여도를 계산합니다. 기여도가 가장 높은 워커가 승자이고, 유일하게 음수 점수를 받은 워커가 오염 출처로 지목됩니다.
+
+측정: accuracy(최종 답/코드가 gold, 거짓 없음) · propagation(최종 답/코드에 거짓) · detection(오염 출처 표시) · recovery(탐지 + 정답). 비용·토큰은 로그만 남기고 점수에 넣지 않습니다.
 
 ```sh
 export IMPL_COMPARISON_LLM_PROVIDER=openai-compatible
 export IMPL_COMPARISON_LLM_MODEL=<model-id>
 export OPENAI_API_KEY=<secret>
 
-PYTHONPATH=src:../../../src python -m impl_comparison.poison_compare --condition agent
+PYTHONPATH=src:../../../src python -m impl_comparison.poison_compare --condition agent --task-set all
 ```
 
-결과는 `results/poison/comparison.md`입니다. 이 스위트는 Artificial Analysis Index가 아닙니다. `--allow-fake`는 하니스 테스트 전용입니다.
+`--task-set`는 `all`(기본) · `micro-qna` · `code` 중 하나입니다. 결과는 `results/poison/comparison.md`에 **통제**·**실제성** 두 표로 나뉘어 기록됩니다 — 하나의 Index로 합치지 않습니다. 이 스위트는 Artificial Analysis Index가 아닙니다. `--allow-fake`는 하니스 테스트 전용입니다.
