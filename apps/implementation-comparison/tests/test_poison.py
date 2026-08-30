@@ -223,6 +223,14 @@ def test_poison_compare_parses_condition_and_allow_fake():
     assert args.allow_fake is True
     assert args.attempts == 1
     assert args.system == "dag-bpd"
+    assert args.task_set == "all"
+
+
+def test_poison_compare_parses_task_set():
+    from impl_comparison.poison_compare import parse_args
+
+    args = parse_args(["--task-set", "code"])
+    assert args.task_set == "code"
 
 
 def test_poison_compare_writes_attribution_metrics(tmp_path):
@@ -263,15 +271,18 @@ def test_poison_compare_writes_attribution_metrics(tmp_path):
         llm=ScriptLLM(),
         allow_fake=True,
         max_turns=8,
+        task_set="micro-qna",
     )
     assert "dag-bpd" in summary
-    rates = summary["dag-bpd"]["rates"]
+    rates = summary["dag-bpd"]["micro_qna"]["rates"]
     assert rates["accurate"] == 1.0
     assert rates["propagated"] == 0.0
     assert rates["detection_hit"] == 1.0
     markdown = (tmp_path / "comparison.md").read_text(encoding="utf-8")
     assert "detection" in markdown.lower() or "탐지" in markdown
     assert "cost" in markdown.lower() or "비용" in markdown
+    assert "Controlled" in markdown
+    assert "Realistic" not in markdown
 
 
 def test_verify_poison_pytest_grading_uses_hidden_tests_not_string_match(tmp_path):

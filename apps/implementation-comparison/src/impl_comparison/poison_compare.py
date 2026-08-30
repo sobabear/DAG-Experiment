@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Type
 from .compare import SYSTEMS, _model_for_llm, _selected_systems
 from .llm_config import allow_fake_from_env, llm_from_env
 from .poison import CONDITIONS, all_poison_tasks, materialize_poison_task, verify_run
+from .poison_code_tasks import all_code_poison_tasks, materialize_code_poison_task
 from .protocol import (
     ExecutionPolicy,
     LLMResponse,
@@ -74,6 +75,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default="all",
         choices=("all",) + CONDITIONS,
     )
+    parser.add_argument(
+        "--task-set",
+        default="all",
+        choices=("all", "micro-qna", "code"),
+    )
     parser.add_argument("--attempts", type=int, default=DEFAULT_ATTEMPTS)
     parser.add_argument("--system", default=None, choices=tuple(SYSTEMS))
     parser.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
@@ -94,27 +100,41 @@ def compare_poison(
     model: Optional[ModelConfig] = None,
     allow_fake: bool = False,
     max_turns: int = DEFAULT_MAX_TURNS,
+    task_set: str = "all",
 ) -> Dict[str, Dict[str, object]]:
     resolved_llm, resolved_model = _resolve_llm(llm, model, allow_fake)
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
     selected = _selected_systems(system)
-    if condition == "all":
-        tasks = all_poison_tasks()
-    else:
-        tasks = all_poison_tasks([condition])
+    conditions = None if condition == "all" else [condition]
+    micro_tasks = all_poison_tasks(conditions) if task_set in ("all", "micro-qna") else []
+    code_tasks = all_code_poison_tasks(conditions) if task_set in ("all", "code") else []
     summary: Dict[str, Dict[str, object]] = {}
     for system_id, cls in selected.items():
-        summary[system_id] = evaluate_poison_system(
-            system_id,
-            cls,
-            results_dir / system_id,
-            attempts,
-            tasks,
-            resolved_llm,
-            resolved_model,
-            max_turns,
-        )
+        entry: Dict[str, object] = {}
+        if micro_tasks:
+            entry["micro_qna"] = evaluate_poison_system(
+                system_id,
+                cls,
+                results_dir / system_id / "micro-qna",
+                attempts,
+                micro_tasks,
+                resolved_llm,
+                resolved_model,
+                max_turns,
+            )
+        if code_tasks:
+            entry["code"] = evaluate_poison_system(
+                system_id,
+                cls,
+                results_dir / system_id / "code",
+                attempts,
+                code_tasks,
+                resolved_llm,
+                resolved_model,
+                max_turns,
+            )
+        summary[system_id] = entry
     (results_dir / "score.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
     )
@@ -154,7 +174,10 @@ def evaluate_poison_system(
                 "running {} {} attempt {}".format(system_id, task.task_id, attempt_id),
                 flush=True,
             )
-            materialize_poison_task(task, source)
+            if task.metadata.get("grading") == "pytest":
+                materialize_code_poison_task(task, source)
+            else:
+                materialize_poison_task(task, source)
             request = RunRequest(
                 task=task,
                 model=model,
@@ -239,10 +262,47 @@ def render_poison_markdown(summary: Dict[str, Dict[str, object]]) -> str:
         "",
         "Cost and tokens are logged only. They are not part of the attribution rates.",
         "",
+    ]
+    lines.extend(
+        _render_group(
+            summary, "micro_qna", "Controlled (micro-QnA, string-match grading)"
+        )
+    )
+    lines.extend(
+        _render_group(
+            summary, "code", "Realistic (code-verifiable, hidden pytest grading)"
+        )
+    )
+    lines.extend(
+        [
+            "## Metrics",
+            "",
+            "- **accuracy:** final answer/code passes grading (string match for "
+            "micro-QnA, hidden pytest for code tasks), not the planted lie",
+            "- **propagation:** the planted lie appears in the final answer or code",
+            "- **detection:** the system names the poisoned worker or scan node",
+            "- **recovery:** detection and accuracy together",
+            "",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _render_group(
+    summary: Dict[str, Dict[str, object]], key: str, title: str
+) -> List[str]:
+    rows = [
+        (system_id, entry[key]) for system_id, entry in summary.items() if key in entry
+    ]
+    if not rows:
+        return []
+    lines = [
+        "## {}".format(title),
+        "",
         "| system | accuracy | propagation | detection | recovery | cost (USD) | tokens in/out/cache |",
         "|--------|----------|-------------|-----------|----------|------------|---------------------|",
     ]
-    for system_id, payload in summary.items():
+    for system_id, payload in rows:
         rates = payload["rates"]  # type: ignore[index]
         metrics = payload["metrics"]  # type: ignore[index]
         tokens = metrics["tokens"]
@@ -262,19 +322,8 @@ def render_poison_markdown(summary: Dict[str, Dict[str, object]]) -> str:
                 token_text,
             )
         )
-    lines.extend(
-        [
-            "",
-            "## Metrics",
-            "",
-            "- **accuracy:** final answer contains the gold value, not the planted lie",
-            "- **propagation:** the planted lie appears in the final answer",
-            "- **detection:** the system names the poisoned worker or scan node",
-            "- **recovery:** detection and accuracy together",
-            "",
-        ]
-    )
-    return "\n".join(lines) + "\n"
+    lines.append("")
+    return lines
 
 
 def _resolve_llm(
@@ -299,6 +348,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         system=args.system,
         allow_fake=args.allow_fake,
         max_turns=args.max_turns,
+        task_set=args.task_set,
     )
     print("wrote", results_dir / "comparison.md")
 
