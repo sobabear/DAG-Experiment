@@ -104,3 +104,19 @@ OpenAI 지원은 선택 사항이며 fallback smoke 테스트에는 필요하지
 - **Repository Q&A 10개**: call graph, 설정 영향, root cause, 의존성, 보안, 테스트 공백, 성능, 상태 흐름, 장애 복구, 설계 trade-off
 
 각 태스크는 숨겨진 verifier를 사용하고 3회 독립 시도합니다. Fake LLM 결과는 harness 검증용이며 연구 결과에 포함하지 않습니다.
+
+## Poison / attribution 실험
+
+연구 질문은 Index나 비용이 아니라 **DAG가 심은 거짓을 격리·탐지·복구할 수 있는가**입니다. 작은 QnA 3개(`TIMEOUT_SECONDS` / `LISTEN_PORT` / `MAX_RETRIES`)에 gold와 심은 거짓을 고정하고, 조건은 `none` / `document`(NOTES.md) / `agent`(워커 0 또는 scan 노드에 거짓 주입)입니다.
+
+측정: accuracy(최종 답에 gold, 거짓 없음) · propagation(최종 답에 거짓) · detection(오염 출처 표시) · recovery(탐지 + 정답). 비용·토큰은 로그만 남기고 점수에 넣지 않습니다.
+
+```sh
+export IMPL_COMPARISON_LLM_PROVIDER=openai-compatible
+export IMPL_COMPARISON_LLM_MODEL=<model-id>
+export OPENAI_API_KEY=<secret>
+
+PYTHONPATH=src:../../../src python -m impl_comparison.poison_compare --condition agent
+```
+
+결과는 `results/poison/comparison.md`입니다. 이 스위트는 Artificial Analysis Index가 아닙니다. `--allow-fake`는 하니스 테스트 전용입니다.

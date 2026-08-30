@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .llm import ModelProtocol
@@ -17,11 +18,13 @@ def run_tool_loop(
     context: RunnerContext,
     system_prompt: str = "",
     extra_messages: Optional[List[Dict[str, Any]]] = None,
+    workspace_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     registry = default_registry()
     tool_schemas = default_tool_schemas()
+    root = Path(workspace_root) if workspace_root is not None else context.workspace_root
     tool_context = ToolContext(
-        workspace_root=context.workspace_root,
+        workspace_root=root,
         policy=request.policy,
         limits=request.limits,
         metrics=context.metrics,
