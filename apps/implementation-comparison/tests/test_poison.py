@@ -298,6 +298,67 @@ def test_verify_poison_pytest_grading_uses_hidden_tests_not_string_match(tmp_pat
     assert scored.details["propagated"] is True
 
 
+def test_bpd_promotes_winning_workers_workspace_for_pytest_grading(tmp_path):
+    from impl_comparison.poison_code_tasks import (
+        code_poison_task,
+        materialize_code_poison_task,
+    )
+
+    task = code_poison_task("poison-timeout-unit", "agent")
+    workspace = tmp_path / "ws"
+    materialize_code_poison_task(task, workspace)
+
+    gold_fix = "def resolve_timeout_ms(config_seconds):\n    return config_seconds * 1000\n"
+    lie_fix = "def resolve_timeout_ms(config_seconds):\n    return config_seconds + 1000\n"
+
+    def write_call(content):
+        return {
+            "content": "applying a fix",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "function": {
+                        "name": "write",
+                        "arguments": {"path": "worker.py", "content": content},
+                    },
+                }
+            ],
+        }
+
+    llm = FakeLLM(
+        [
+            write_call(lie_fix),
+            {"content": "the value is already close to milliseconds"},  # worker 0
+            write_call(gold_fix),
+            {"content": "multiply the configured seconds by 1000"},  # worker 1
+            write_call(gold_fix),
+            {"content": "multiply the configured seconds by 1000"},  # worker 2
+            {"content": "multiply the configured seconds by 1000"},  # summarizer 0
+            {"content": "multiply the configured seconds by 1000"},  # summarizer 1
+            {"content": "multiply the configured seconds by 1000"},  # summarizer 2
+            {
+                "content": (
+                    "1,1,-1\n1,2,-1\n1,3,-1\n"
+                    "2,1,1\n2,2,1\n2,3,1\n"
+                    "3,1,1\n3,2,1\n3,3,1\n"
+                )
+            },  # independent judge
+        ]
+    )
+    payload = BpdDagSystem(llm, workers=3).run(
+        _request(task, workspace, "dag-bpd"),
+        _context(tmp_path, workspace),
+    )
+    assert payload["detected_source"] == 0
+    promoted = (workspace / "worker.py").read_text(encoding="utf-8")
+    assert "config_seconds * 1000" in promoted
+    assert "config_seconds + 1000" not in promoted
+    scored = verify_poison(task, payload, workspace)
+    assert scored.details["accurate"] is True
+    assert scored.details["propagated"] is False
+    assert scored.details["detection_hit"] is True
+
+
 def test_poison_smoke_llm_handles_judge_and_summarizer_calls(tmp_path):
     from impl_comparison.poison_compare import PoisonSmokeLLM
 

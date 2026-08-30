@@ -80,12 +80,14 @@ class BpdDagSystem:
     ) -> Dict[str, Any]:
         gold = str(meta.get("gold", ""))
         lie = str(meta.get("lie", ""))
+        grading = meta.get("grading", "string")
         poison_worker = int(meta.get("poison_worker", 0))
         condition = meta.get("condition")
         graph = None
         if EdgeGraph is not None:
             graph = EdgeGraph([self.workers, self.workers, 1])
         proposals: List[str] = []
+        worker_roots: List[Path] = []
         for index in range(self.workers):
             context.emit("child_started", worker=index)
             worker_root = Path(context.artifact_dir) / "workers" / str(index)
@@ -114,6 +116,7 @@ class BpdDagSystem:
                 workspace_root=worker_root,
             )
             proposals.append(str(result.get("final_text", "")))
+            worker_roots.append(worker_root)
             context.emit("child_finished", worker=index)
 
         summaries = [
@@ -125,6 +128,8 @@ class BpdDagSystem:
         worker_scores = backward_propagate(edge_matrix, terminal_scores)
         detected = detect_bpd_outlier(worker_scores)
         winner_index = max(range(len(worker_scores)), key=lambda i: worker_scores[i])
+        if grading == "pytest":
+            self._promote_workspace(worker_roots[winner_index], context.workspace_root)
 
         if graph is not None:
             for i in range(self.workers):
@@ -143,6 +148,13 @@ class BpdDagSystem:
             "edges": edge_matrix if graph is None else getattr(graph, "connections", edge_matrix),
             "isolated": True,
         }
+
+    @staticmethod
+    def _promote_workspace(source: Path, destination: Path) -> None:
+        destination = Path(destination)
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(source, destination)
 
 
 def _summarize(
