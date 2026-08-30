@@ -131,7 +131,21 @@ def test_bpd_agent_poison_majority_vote_rejects_liar_worker(tmp_path):
     workspace = tmp_path / "ws"
     materialize_poison_task(task, workspace)
     llm = FakeLLM(
-        [{"content": "I claim 300"}, {"content": "The value is 30"}, {"content": "30"}]
+        [
+            {"content": "I claim 300"},  # worker 0 (poisoned)
+            {"content": "The value is 30"},  # worker 1
+            {"content": "30"},  # worker 2
+            {"content": "30"},  # summarizer 0
+            {"content": "30"},  # summarizer 1
+            {"content": "30"},  # summarizer 2
+            {
+                "content": (
+                    "1,1,-1\n1,2,-1\n1,3,-1\n"
+                    "2,1,1\n2,2,1\n2,3,1\n"
+                    "3,1,1\n3,2,1\n3,3,1\n"
+                )
+            },  # independent judge, batched
+        ]
     )
     payload = BpdDagSystem(llm, workers=3).run(
         _request(task, workspace, "dag-bpd"),
@@ -140,10 +154,23 @@ def test_bpd_agent_poison_majority_vote_rejects_liar_worker(tmp_path):
     assert "30" in payload["final_text"]
     assert "300" not in payload["final_text"]
     assert payload["detected_source"] == 0
+    assert payload["worker_scores"][0] < 0
+    assert payload["worker_scores"][1] > 0
     scored = verify_poison(task, payload, workspace)
     assert scored.details["accurate"] is True
     assert scored.details["propagated"] is False
     assert scored.details["detection_hit"] is True
+
+
+def test_parse_edge_matrix_ignores_malformed_lines_and_defaults_missing_pairs_to_zero():
+    from impl_comparison.systems.bpd import _parse_edge_matrix
+
+    text = "not a score line\n1,1,-1\n2,2,1\n"
+    matrix = _parse_edge_matrix(text, 3, 3)
+    assert matrix[0][0] == -1
+    assert matrix[1][1] == 1
+    assert matrix[0][1] == 0
+    assert matrix[2][2] == 0
 
 
 def test_general_agent_poison_cannot_attribute_source(tmp_path):
@@ -212,6 +239,17 @@ def test_poison_compare_writes_attribution_metrics(tmp_path):
             elif "MAX_RETRIES" in blob:
                 gold, lie = "3", "10"
             system = request.system_prompt or ""
+            if system.startswith("You are an independent judge"):
+                return LLMResponse(
+                    text=(
+                        "1,1,-1\n1,2,-1\n1,3,-1\n"
+                        "2,1,1\n2,2,1\n2,3,1\n"
+                        "3,1,1\n3,2,1\n3,3,1\n"
+                    ),
+                    usage=UsageMetrics(),
+                )
+            if system.startswith("Summarizer"):
+                return LLMResponse(text=gold, usage=UsageMetrics())
             if "Proposal worker 1" in system and "Injected claim" in system:
                 return LLMResponse(text=lie, usage=UsageMetrics())
             return LLMResponse(text=gold, usage=UsageMetrics())
@@ -233,3 +271,19 @@ def test_poison_compare_writes_attribution_metrics(tmp_path):
     markdown = (tmp_path / "comparison.md").read_text(encoding="utf-8")
     assert "detection" in markdown.lower() or "탐지" in markdown
     assert "cost" in markdown.lower() or "비용" in markdown
+
+
+def test_poison_smoke_llm_handles_judge_and_summarizer_calls(tmp_path):
+    from impl_comparison.poison_compare import PoisonSmokeLLM
+
+    task = poison_task("poison-timeout", "agent")
+    workspace = tmp_path / "ws"
+    materialize_poison_task(task, workspace)
+    llm = PoisonSmokeLLM()
+    payload = BpdDagSystem(llm, workers=3).run(
+        _request(task, workspace, "dag-bpd"),
+        _context(tmp_path, workspace),
+    )
+    assert payload["detected_source"] == 0
+    assert "30" in payload["final_text"]
+    assert "300" not in payload["final_text"]

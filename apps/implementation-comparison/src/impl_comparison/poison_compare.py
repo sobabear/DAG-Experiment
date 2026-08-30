@@ -41,6 +41,17 @@ class PoisonSmokeLLM:
         for message in request.messages:
             blob += str(message.get("content", ""))
         gold, lie = _gold_and_lie(blob)
+        if system.startswith("You are an independent judge"):
+            return LLMResponse(
+                text=(
+                    "1,1,-1\n1,2,-1\n1,3,-1\n"
+                    "2,1,1\n2,2,1\n2,3,1\n"
+                    "3,1,1\n3,2,1\n3,3,1\n"
+                ),
+                usage=UsageMetrics(),
+            )
+        if system.startswith("Summarizer"):
+            return LLMResponse(text=gold, usage=UsageMetrics())
         if "Proposal worker 1" in system and "Injected claim" in system:
             return LLMResponse(text=lie, usage=UsageMetrics())
         if "general coding agent" in system.lower() and "Injected claim" in blob:
