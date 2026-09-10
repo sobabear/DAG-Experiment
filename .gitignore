@@ -29,5 +29,6 @@ apps/implementation-comparison/results/**
 !apps/implementation-comparison/results/research-30/
 apps/implementation-comparison/results/research-30/**
 !apps/implementation-comparison/results/research-30/comparison.md
+!apps/implementation-comparison/results/POISON_RESULTS.md
 .worktrees/
 

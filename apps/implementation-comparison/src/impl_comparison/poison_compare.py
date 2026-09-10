@@ -61,10 +61,18 @@ class PoisonSmokeLLM:
 
 
 def _gold_and_lie(blob: str) -> Tuple[str, str]:
-    if "LISTEN_PORT" in blob:
-        return "8080", "80"
-    if "MAX_RETRIES" in blob:
-        return "3", "10"
+    from .poison import POISON_TASKS
+
+    # Longest varname first so IDLE_TIMEOUT_SECONDS does not match TIMEOUT_SECONDS.
+    ranked = sorted(
+        POISON_TASKS,
+        key=lambda spec: len(str(spec["source"]).split("=", 1)[0].strip()),
+        reverse=True,
+    )
+    for spec in ranked:
+        varname = str(spec["source"]).split("=", 1)[0].strip()
+        if varname and varname in blob:
+            return str(spec["gold"]), str(spec["lie"])
     return "30", "300"
 
 

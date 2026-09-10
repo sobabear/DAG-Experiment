@@ -1,0 +1,40 @@
+{
+  "runs": [
+    {
+      "run_id": "poison-100",
+      "path": "results/poison-100",
+      "score_json": "results/poison-100/score.json",
+      "comparison_md": "results/poison-100/comparison.md"
+    },
+    {
+      "run_id": "poison-yonsei-improved",
+      "path": "results/poison-yonsei-improved",
+      "score_json": "results/poison-yonsei-improved/score.json",
+      "comparison_md": "results/poison-yonsei-improved/comparison.md"
+    },
+    {
+      "run_id": "poison-20",
+      "path": "results/poison-20",
+      "score_json": "results/poison-20/score.json",
+      "comparison_md": "results/poison-20/comparison.md"
+    },
+    {
+      "run_id": "poison-all",
+      "path": "results/poison-all",
+      "score_json": "results/poison-all/score.json",
+      "comparison_md": "results/poison-all/comparison.md"
+    },
+    {
+      "run_id": "poison",
+      "path": "results/poison",
+      "score_json": "results/poison/score.json",
+      "comparison_md": "results/poison/comparison.md"
+    },
+    {
+      "run_id": "poison-conditions",
+      "path": "results/poison-conditions",
+      "score_json": "results/poison-conditions/score.json",
+      "comparison_md": "results/poison-conditions/comparison.md"
+    }
+  ]
+}

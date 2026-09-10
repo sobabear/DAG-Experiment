@@ -4,6 +4,7 @@ import pytest
 
 from impl_comparison.poison_code_tasks import (
     CODE_POISON_TASKS,
+    CORE_CODE_POISON_TASKS,
     all_code_poison_tasks,
     code_poison_task,
     materialize_code_poison_task,
@@ -12,7 +13,8 @@ from impl_comparison.systems.workspace_tests import run_workspace_pytest
 
 
 def test_code_poison_tasks_have_required_fields():
-    assert len(CODE_POISON_TASKS) == 5
+    assert len(CODE_POISON_TASKS) == 100
+    assert len(CORE_CODE_POISON_TASKS) == 20
     required = {
         "stem",
         "prompt",
@@ -35,7 +37,9 @@ def test_code_poison_tasks_have_required_fields():
 
 
 @pytest.mark.parametrize(
-    "spec", CODE_POISON_TASKS, ids=[item["stem"] for item in CODE_POISON_TASKS]
+    "spec",
+    CORE_CODE_POISON_TASKS,
+    ids=[item["stem"] for item in CORE_CODE_POISON_TASKS],
 )
 def test_code_poison_fixture_discriminates_gold_from_lie(spec, tmp_path):
     workspace = tmp_path / spec["stem"]
@@ -71,8 +75,17 @@ def test_code_poison_task_materializes_buggy_source_and_hidden_test(tmp_path):
     assert not (clean / "NOTES.md").exists()
 
 
-def test_all_code_poison_tasks_covers_five_stems_times_three_conditions():
+def test_all_code_poison_tasks_covers_hundred_stems_times_three_conditions():
     tasks = all_code_poison_tasks()
-    assert len(tasks) == 15
+    assert len(tasks) == 300
     stems = {item["stem"] for item in CODE_POISON_TASKS}
-    assert len(stems) == 5
+    assert len(stems) == 100
+
+
+def test_generated_code_fixture_discriminates(tmp_path):
+    spec = next(item for item in CODE_POISON_TASKS if item["stem"] == "poison-combine-000")
+    workspace = tmp_path / spec["stem"]
+    workspace.mkdir()
+    (workspace / spec["test_file"]).write_text(spec["test_source"], encoding="utf-8")
+    (workspace / spec["source_file"]).write_text(spec["gold_source"], encoding="utf-8")
+    assert run_workspace_pytest(workspace) == "passed"

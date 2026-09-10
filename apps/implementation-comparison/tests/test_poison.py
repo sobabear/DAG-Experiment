@@ -193,19 +193,55 @@ def test_yonsei_records_disagreement_when_implement_rejects_poisoned_scan(tmp_pa
     task = poison_task("poison-timeout", "agent")
     workspace = tmp_path / "ws"
     materialize_poison_task(task, workspace)
-    llm = FakeLLM([{"content": "code says 30"}])
-    payload = YonseiDagSystem(llm).run(
+    requests = []
+
+    class RecordingLLM:
+        def complete(self, request):
+            requests.append(request)
+            return FakeLLM([{"content": "code says 30"}]).complete(request)
+
+    payload = YonseiDagSystem(RecordingLLM()).run(
         _request(task, workspace, "dag-yonsei"),
         _context(tmp_path, workspace),
     )
+    blob = (requests[0].system_prompt or "") + "".join(
+        str(m.get("content", "")) for m in requests[0].messages
+    )
+    assert "workspace source" in blob.lower() or "source files" in blob.lower()
+    assert "prefer" in blob.lower()
     assert payload["detected_source"] == "scan"
     scored = verify_poison(task, payload, workspace)
     assert scored.details["accurate"] is True
     assert scored.details["detection_hit"] is True
 
 
+def test_yonsei_does_not_claim_detection_when_implement_follows_poisoned_scan(tmp_path):
+    task = poison_task("poison-timeout", "agent")
+    workspace = tmp_path / "ws"
+    materialize_poison_task(task, workspace)
+    llm = FakeLLM([{"content": "300"}])
+    payload = YonseiDagSystem(llm).run(
+        _request(task, workspace, "dag-yonsei"),
+        _context(tmp_path, workspace),
+    )
+    assert payload.get("detected_source") is None
+    scored = verify_poison(task, payload, workspace)
+    assert scored.details["propagated"] is True
+    assert scored.details["detection_hit"] is False
+
+
+def test_yonsei_detection_requires_source_scan_conflict(tmp_path):
+    from impl_comparison.systems.yonsei import source_conflicts_with_scan
+
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "app.py").write_text("TIMEOUT_SECONDS = 30\n", encoding="utf-8")
+    assert source_conflicts_with_scan(workspace, gold="30", lie="300") is True
+    assert source_conflicts_with_scan(workspace, gold="30", lie="30") is False
+
+
 def test_poison_suite_has_fixed_gold_and_lie_pairs():
-    assert len(POISON_TASKS) >= 3
+    assert len(POISON_TASKS) == 100
     for spec in POISON_TASKS:
         assert spec["gold"]
         assert spec["lie"]
@@ -234,7 +270,7 @@ def test_poison_compare_parses_task_set():
 
 
 def test_poison_compare_writes_attribution_metrics(tmp_path):
-    from impl_comparison.poison_compare import compare_poison
+    from impl_comparison.poison_compare import _gold_and_lie, compare_poison
     from impl_comparison.protocol import LLMResponse, UsageMetrics
 
     class ScriptLLM:
@@ -242,11 +278,7 @@ def test_poison_compare_writes_attribution_metrics(tmp_path):
             blob = request.system_prompt or ""
             for message in request.messages:
                 blob += str(message.get("content", ""))
-            gold, lie = "30", "300"
-            if "LISTEN_PORT" in blob:
-                gold, lie = "8080", "80"
-            elif "MAX_RETRIES" in blob:
-                gold, lie = "3", "10"
+            gold, lie = _gold_and_lie(blob)
             system = request.system_prompt or ""
             if system.startswith("You are an independent judge"):
                 return LLMResponse(
