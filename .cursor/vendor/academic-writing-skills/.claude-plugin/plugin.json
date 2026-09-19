@@ -1,0 +1,22 @@
+{
+  "name": "academic-writing-skills",
+  "description": "Lifecycle-aware academic writing and scientific paper review with progressive method, domain, round, and reviewer modules.",
+  "version": "1.1.6",
+  "author": {
+    "name": "Wenyu Chiou"
+  },
+  "homepage": "https://github.com/WenyuChiou/academic-writing-skills",
+  "repository": "https://github.com/WenyuChiou/academic-writing-skills",
+  "license": "MIT",
+  "keywords": [
+    "academic-writing",
+    "manuscript",
+    "psychometrics",
+    "research",
+    "sem",
+    "llm",
+    "water-resources",
+    "writing",
+    "peer-review"
+  ]
+}

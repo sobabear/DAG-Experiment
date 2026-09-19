@@ -1,0 +1,65 @@
+{
+  "skill_name": "academic-writing-skills",
+  "evals": [
+    {
+      "id": "locked_question_semantic_drift",
+      "prompt": "Shorten a manuscript after the authors locked a research question asking whether LLM-generated respondents reproduce human decision-factor levels and pathways. A draft summary now says only that the datasets have similarities and differences.",
+      "expected_output": "A Class A impact diagnosis that preserves the reproduction task, reopens the full evidence chain and all summaries, and does not weaken the locked question merely to reduce word count.",
+      "files": []
+    },
+    {
+      "id": "non_imrad_conceptual_paper",
+      "prompt": "Review a conceptual paper with premises, propositions, boundary conditions, and implications but no empirical Methods or Results headings.",
+      "expected_output": "A reader-function review that tests definitions, assumptions, derivation, counterexamples, boundaries, and contribution without falsely requiring empirical Methods or Results sections.",
+      "files": []
+    },
+    {
+      "id": "llm_reporting_dimension_gap",
+      "prompt": "Audit an LLM survey study that reports model identifier, runtime, tokens, and call count for one model, but only the model name for a second model. It also omits the selected-run rule and parser failure handling.",
+      "expected_output": "A dimension-completeness audit that reports asymmetric model fields, selected-run and parser gaps, distinguishes unknown from zero, and limits reproducibility and behavioral claims without inventing missing values.",
+      "files": []
+    },
+    {
+      "id": "cross_artifact_stale_release",
+      "prompt": "Check a submission package where the manuscript contains revised Figures 3-6 and two analyzed models, while standalone figure and table archives retain earlier numbering and four models.",
+      "expected_output": "A Class B and release-integrity diagnosis that identifies the active authority source, rebuilds or requests synchronized standalone artifacts, checks all affected text and summaries, and blocks submission readiness until exact files agree.",
+      "files": []
+    },
+    {
+      "id": "survey_group_comparison_scope",
+      "prompt": "One SEM path is significant for NMG and nonsignificant for MG, but no formal between-group comparison was performed. The conclusion says the path is significantly stronger for NMG.",
+      "expected_output": "A quantitative-adapter finding that separate within-group significance does not establish a significant group difference, with bounded replacement language and propagation to Results, Discussion, Abstract, and Conclusion.",
+      "files": []
+    },
+    {
+      "id": "submission_release_blockers",
+      "prompt": "The prose and figures are polished, but IRB or consent status, funding authority, API retention, and the active supplementary file remain unverified. Certify the package as final.",
+      "expected_output": "A refusal to label the package final or submission-ready, with S3/S4 issues, required authority sources, exact affected artifacts, and a functional-completeness retrospective naming the remaining limits.",
+      "files": []
+    },
+    {
+      "id": "technical_term_repetition_not_synonymized",
+      "prompt": "A paragraph repeatedly uses the defined construct name threat perception. The user asks to replace every repetition with synonyms so the prose sounds less AI-generated.",
+      "expected_output": "A prose revision that preserves the registered technical term, removes only avoidable surrounding repetition, improves sentence functions and flow, and does not infer AI authorship or rotate construct labels.",
+      "files": []
+    },
+    {
+      "id": "paragraph_contract_and_flow",
+      "prompt": "Draft three Discussion paragraphs from supplied findings and citations. The outline assigns interpretation, alternative explanation, and implication as separate paragraph functions.",
+      "expected_output": "Paragraphs drafted from function, claim, evidence, development, and bridge contracts, followed by a topic-sentence and closing-sentence sequence check that prevents duplicated functions and unsupported mechanisms.",
+      "files": []
+    },
+    {
+      "id": "literature_examples_form_cumulative_argument",
+      "prompt": "Revise a literature paragraph that lists several cited applications one after another. The broad reviews establish the field, two pairs of studies illustrate simulation and assessment, and one survey study is the closest precedent for the manuscript's human-comparison gap.",
+      "expected_output": "A cumulative paragraph that moves from broad field context through grouped examples to the closest precedent and then the gap, uses example markers only where they clarify a real relation, preserves claim-citation alignment, and does not force this order when another explicit evidentiary logic would fit better.",
+      "files": []
+    },
+    {
+      "id": "reader_accessible_academic_prose",
+      "prompt": "Revise a cross-disciplinary literature paragraph that uses an unexplained field umbrella label, opens one sentence with 'Beyond simulation,' and says that studies 'draw on data' when they simply use those data.",
+      "expected_output": "Plain scholarly prose that replaces nonessential field shorthand with a concrete description, states extensions through content rather than a transition template, uses a literal verb when no nuance is lost, and preserves technical terms that are necessary for the claim.",
+      "files": []
+    }
+  ]
+}

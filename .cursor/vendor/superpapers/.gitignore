@@ -1,0 +1,59 @@
+# Sandbox device redirects (Claude Code sandbox)
+AGENTS.md
+CLAUDE.md
+.bash_profile
+.bashrc
+.codex
+.claude/
+.superpowers/
+.gitconfig
+.gitmodules
+.idea
+.mcp.json
+.profile
+.ripgreprc
+.vscode
+.zprofile
+.zshrc
+
+# LaTeX auxiliary files
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+
+# OS and editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Local dev and research artifacts
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.env.*
+.python-version
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+public/
+.private-docs/
+
+# Example (data and codes)
+
+credit_and_productivity/
+monetary_pass_through/
+docs/
