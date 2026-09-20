@@ -7,6 +7,8 @@
 
 이 문서는 Artificial Analysis Index와 **합치지 않습니다.** 비용·토큰은 참고용 로그만 남깁니다.
 
+**초록·후속 실험 브리핑:** `docs/superpapers/BRIEFING-abstract-and-next-experiments.md`
+
 ---
 
 ## 1. 연구 설정 요약
@@ -276,6 +278,7 @@ PYTHONPATH=src python -m pytest tests/test_poison.py tests/test_poison_code_task
 | `results/poison-100/comparison.md` | 강화 주입, n=100+100, 3시스템 |
 | `results/poison-yonsei-improved/comparison.md` | yonsei source-우선 개선 후 |
 | `results/poison-conditions/comparison.md` | none/document/agent ablation (pooled); 조건별은 `tab_condition_ablation.tex` |
+| `results/poison-budget-4/comparison.md` | 3× 공정 비교 (general-1/3, flat-3, BPD), core 20+20 |
 | `results/research-30/comparison.md` | (별도) Index 스위트 — poison과 합치지 말 것 |
 | 본 파일 | 서사·해석·재현 |
 
@@ -321,6 +324,39 @@ PYTHONPATH=src python -m pytest tests/test_poison.py tests/test_poison_code_task
 2. **`document`:** 이 스위트·강화 NOTES에도 prop≈0 (모델이 source/tests를 더 따름). agent path와 **교환 불가** — H4 방향 지지.  
 3. **`agent`:** BPD QnA rec 0.87 / code 0.64; general prop≈0.20·det=0 — H3 지지 (poison-100 재현).  
 4. **yonsei (improved):** agent에서 prop=0·rec=1.0; none/document에서는 det=0 (오염 scan이 없을 때 attribution 안 함).
+
+---
+
+## 9. Compute-matched budget-4 (2026-09-20)
+
+**질문:** BPD가 3워커라서 유리한 것 아닌가?  
+**설정:** core 20+20, `agent`, replica 0만 독, `gpt-5.6-luna`. 원본 `results/poison-budget-4/comparison.md`.
+
+### QnA (n=20)
+
+| system | acc | prop | det | rec | tokens in/out |
+|--------|-----|------|-----|-----|---------------|
+| general-1 | 0.90 | 0.10 | 0.00 | 0.00 | 25k / 0.6k |
+| general-3 majority | 1.00 | 0.00 | 0.15 | 0.15 | 72k / 2.0k |
+| **flat-3 majority** | 1.00 | 0.00 | **1.00** | **1.00** | 59k / 1.4k |
+| dag-bpd | 1.00 | 0.00 | 0.95 | 0.95 | 60k / 1.4k |
+
+### Code (n=20)
+
+| system | acc | prop | det | rec | tokens in/out |
+|--------|-----|------|-----|-----|---------------|
+| general-1 | 0.70 | 0.25 | 0.00 | 0.00 | 61k / 3.9k |
+| general-3 majority | 0.95 | 0.00 | 0.00 | 0.00 | 182k / 11k |
+| flat-3 majority | 0.95 | 0.05 | 0.00 | 0.00 | 174k / 11k |
+| **dag-bpd** | **1.00** | **0.00** | **0.40** | **0.40** | 173k / 12k |
+
+### 해석
+
+1. **3× 예산은 isolation에 크다.** general-1 대비 3-replica는 QnA/code 모두 전파를 거의 없앰. “BPD만 3배라서 이긴다”는 지적은 QnA **정답률**에는 해당.
+2. **같은 3워커에서 BPD 추가분은 QnA에선 거의 없음.** flat-3 majority가 det 1.00, BPD 0.95. 토큰도 flat-3≈BPD. judge+backprop가 QnA string-match에선 majority를 넘지 않음.
+3. **code에서 attribution은 BPD만 의미 있게 켜짐** (det 0.40 vs majority 0). 전략 문구 독은 다수결이 출처를 못 짚고, judge/backprop는 일부 짚음.
+4. **병렬 DAG vs 3회 단일 루프:** QnA det는 flat-3(1.00) ≫ general-3(0.15). 같은 3×라도 워커를 나란히 두고 비교하는 쪽이 출처 지목에 유리.
+5. n=20이라 확정적 주장은 보류. Findings에는 “3× matched; QnA는 majority로 충분, code attribution은 BPD”로 쓰는 게 맞음.
 
 ---
 

@@ -7,10 +7,21 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Type
 
-from .compare import SYSTEMS, _model_for_llm, _selected_systems
+from .compare import SYSTEMS, _model_for_llm
 from .llm_config import allow_fake_from_env, llm_from_env
-from .poison import CONDITIONS, all_poison_tasks, materialize_poison_task, verify_run
-from .poison_code_tasks import all_code_poison_tasks, materialize_code_poison_task
+from .poison import (
+    CONDITIONS,
+    all_core_poison_tasks,
+    all_poison_tasks,
+    materialize_poison_task,
+    verify_run,
+)
+from .poison_code_tasks import (
+    all_code_poison_tasks,
+    all_core_code_poison_tasks,
+    materialize_code_poison_task,
+)
+from .systems.majority3 import FlatMajority3System, GeneralMajority3System
 from .protocol import (
     ExecutionPolicy,
     LLMResponse,
@@ -31,6 +42,17 @@ SUITE_DISCLAIMER = (
     "recovery. It is not an Index and cannot be compared with Artificial Analysis."
 )
 METRIC_KEYS = ("accurate", "propagated", "detection_hit", "recovered")
+POISON_SYSTEMS = {
+    **SYSTEMS,
+    "flat-majority-3": FlatMajority3System,
+    "general-majority-3": GeneralMajority3System,
+}
+BUDGET4_ARMS = (
+    "general-agent-system",
+    "general-majority-3",
+    "flat-majority-3",
+    "dag-bpd",
+)
 
 
 class PoisonSmokeLLM:
@@ -89,7 +111,19 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         choices=("all", "micro-qna", "code"),
     )
     parser.add_argument("--attempts", type=int, default=DEFAULT_ATTEMPTS)
-    parser.add_argument("--system", default=None, choices=tuple(SYSTEMS))
+    parser.add_argument("--system", default=None, choices=tuple(POISON_SYSTEMS))
+    parser.add_argument(
+        "--scale",
+        default="all",
+        choices=("all", "core"),
+        help="all=100+100 catalogs; core=hand-authored 20+20",
+    )
+    parser.add_argument(
+        "--arms",
+        default="default",
+        choices=("default", "budget-4"),
+        help="budget-4: general-1, general-3, flat-3 majority, dag-bpd",
+    )
     parser.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     parser.add_argument(
         "--allow-fake",
@@ -109,14 +143,22 @@ def compare_poison(
     allow_fake: bool = False,
     max_turns: int = DEFAULT_MAX_TURNS,
     task_set: str = "all",
+    scale: str = "all",
+    arms: str = "default",
 ) -> Dict[str, Dict[str, object]]:
     resolved_llm, resolved_model = _resolve_llm(llm, model, allow_fake)
     results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
-    selected = _selected_systems(system)
+    selected = _selected_poison_systems(system, arms)
     conditions = None if condition == "all" else [condition]
-    micro_tasks = all_poison_tasks(conditions) if task_set in ("all", "micro-qna") else []
-    code_tasks = all_code_poison_tasks(conditions) if task_set in ("all", "code") else []
+    if scale == "core":
+        micro_fn = all_core_poison_tasks
+        code_fn = all_core_code_poison_tasks
+    else:
+        micro_fn = all_poison_tasks
+        code_fn = all_code_poison_tasks
+    micro_tasks = micro_fn(conditions) if task_set in ("all", "micro-qna") else []
+    code_tasks = code_fn(conditions) if task_set in ("all", "code") else []
     summary: Dict[str, Dict[str, object]] = {}
     for system_id, cls in selected.items():
         entry: Dict[str, object] = {}
@@ -334,6 +376,22 @@ def _render_group(
     return lines
 
 
+def _selected_poison_systems(
+    system: Optional[str], arms: str
+) -> Dict[str, Type]:
+    if arms == "budget-4":
+        catalog = {key: POISON_SYSTEMS[key] for key in BUDGET4_ARMS}
+    else:
+        catalog = dict(SYSTEMS)
+    if system is None:
+        return catalog
+    if system not in POISON_SYSTEMS:
+        raise ValueError("unknown system: {}".format(system))
+    if system not in catalog:
+        return {system: POISON_SYSTEMS[system]}
+    return {system: catalog[system]}
+
+
 def _resolve_llm(
     llm: Any, model: Optional[ModelConfig], allow_fake: bool
 ) -> Tuple[Any, ModelConfig]:
@@ -357,6 +415,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         allow_fake=args.allow_fake,
         max_turns=args.max_turns,
         task_set=args.task_set,
+        scale=args.scale,
+        arms=args.arms,
     )
     print("wrote", results_dir / "comparison.md")
 

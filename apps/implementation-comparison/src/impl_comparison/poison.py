@@ -272,6 +272,15 @@ def all_poison_tasks(conditions: Optional[Sequence[str]] = None) -> List[TaskSpe
     return tasks
 
 
+def all_core_poison_tasks(conditions: Optional[Sequence[str]] = None) -> List[TaskSpec]:
+    selected = list(conditions) if conditions is not None else list(CONDITIONS)
+    tasks: List[TaskSpec] = []
+    for spec in _CORE_POISON_TASKS:
+        for condition in selected:
+            tasks.append(poison_task(spec["stem"], condition))
+    return tasks
+
+
 def materialize_poison_task(task: TaskSpec, dest: Path) -> None:
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)

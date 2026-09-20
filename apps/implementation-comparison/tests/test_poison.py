@@ -189,6 +189,57 @@ def test_general_agent_poison_cannot_attribute_source(tmp_path):
     assert scored.details["detection_hit"] is False
 
 
+def test_flat_majority3_rejects_liar_worker_without_judge(tmp_path):
+    from impl_comparison.systems.majority3 import FlatMajority3System
+
+    task = poison_task("poison-timeout", "agent")
+    workspace = tmp_path / "ws"
+    materialize_poison_task(task, workspace)
+    llm = FakeLLM(
+        [
+            {"content": "I claim 300"},
+            {"content": "The value is 30"},
+            {"content": "30"},
+        ]
+    )
+    payload = FlatMajority3System(llm).run(
+        _request(task, workspace, "flat-majority-3"),
+        _context(tmp_path, workspace),
+    )
+    assert payload["aggregator"] == "majority"
+    assert payload["detected_source"] == 0
+    assert "30" in payload["final_text"]
+    assert "300" not in payload["final_text"]
+    scored = verify_poison(task, payload, workspace)
+    assert scored.details["accurate"] is True
+    assert scored.details["detection_hit"] is True
+
+
+def test_general_majority3_poisons_only_first_replica(tmp_path):
+    from impl_comparison.systems.majority3 import GeneralMajority3System
+
+    task = poison_task("poison-timeout", "agent")
+    workspace = tmp_path / "ws"
+    materialize_poison_task(task, workspace)
+    llm = FakeLLM(
+        [
+            {"content": "timeout is 300"},
+            {"content": "timeout is 30"},
+            {"content": "the answer is 30"},
+        ]
+    )
+    payload = GeneralMajority3System(llm).run(
+        _request(task, workspace, "general-majority-3"),
+        _context(tmp_path, workspace),
+    )
+    assert payload["aggregator"] == "majority"
+    assert payload["detected_source"] == 0
+    scored = verify_poison(task, payload, workspace)
+    assert scored.details["accurate"] is True
+    assert scored.details["propagated"] is False
+    assert scored.details["detection_hit"] is True
+
+
 def test_yonsei_records_disagreement_when_implement_rejects_poisoned_scan(tmp_path):
     task = poison_task("poison-timeout", "agent")
     workspace = tmp_path / "ws"
@@ -267,6 +318,17 @@ def test_poison_compare_parses_task_set():
 
     args = parse_args(["--task-set", "code"])
     assert args.task_set == "code"
+
+
+def test_poison_compare_parses_budget4_and_core_scale():
+    from impl_comparison.poison_compare import parse_args
+
+    args = parse_args(
+        ["--arms", "budget-4", "--scale", "core", "--condition", "agent"]
+    )
+    assert args.arms == "budget-4"
+    assert args.scale == "core"
+    assert args.condition == "agent"
 
 
 def test_poison_compare_writes_attribution_metrics(tmp_path):
