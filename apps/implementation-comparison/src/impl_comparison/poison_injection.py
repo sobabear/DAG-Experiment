@@ -18,6 +18,20 @@ def agent_worker_prompt(lie: str, *, code: bool = False) -> str:
     ).format(lie=lie)
 
 
+def aligned_general_message(lie: str, *, code: bool = False) -> str:
+    """Same claim text as the worker prompt, delivered as a user message.
+
+    Used by compute-matched arms so every arm sees identical injection wording.
+    """
+    return agent_worker_prompt(lie, code=code).strip()
+
+
+def general_claim_for(meta: dict, lie: str, *, code: bool) -> str:
+    if meta.get("injection_profile") == "aligned":
+        return aligned_general_message(lie, code=code)
+    return general_agent_message(lie, code=code)
+
+
 def scan_node_message(lie: str, *, code: bool = False) -> str:
     if code:
         return (

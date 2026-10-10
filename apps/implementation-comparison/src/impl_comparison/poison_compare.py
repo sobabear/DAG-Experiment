@@ -21,6 +21,7 @@ from .poison_code_tasks import (
     all_core_code_poison_tasks,
     materialize_code_poison_task,
 )
+from .systems.bpd import JudgeOnlyBpdSystem
 from .systems.majority3 import FlatMajority3System, GeneralMajority3System
 from .protocol import (
     ExecutionPolicy,
@@ -46,6 +47,7 @@ POISON_SYSTEMS = {
     **SYSTEMS,
     "flat-majority-3": FlatMajority3System,
     "general-majority-3": GeneralMajority3System,
+    "judge-only-3": JudgeOnlyBpdSystem,
 }
 BUDGET4_ARMS = (
     "general-agent-system",
@@ -53,6 +55,22 @@ BUDGET4_ARMS = (
     "flat-majority-3",
     "dag-bpd",
 )
+BUDGET5_ARMS = (
+    "general-agent-system",
+    "general-majority-3",
+    "flat-majority-3",
+    "judge-only-3",
+    "dag-bpd",
+)
+
+
+def _tag_aligned_profile(tasks):
+    from dataclasses import replace
+
+    return [
+        replace(task, metadata={**task.metadata, "injection_profile": "aligned"})
+        for task in tasks
+    ]
 
 
 class PoisonSmokeLLM:
@@ -121,8 +139,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--arms",
         default="default",
-        choices=("default", "budget-4"),
-        help="budget-4: general-1, general-3, flat-3 majority, dag-bpd",
+        choices=("default", "budget-4", "budget-5"),
+        help=(
+            "budget-4: general-1, general-3, flat-3, dag-bpd (legacy wording); "
+            "budget-5: adds judge-only-3 and aligns injection wording across arms"
+        ),
     )
     parser.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     parser.add_argument(
@@ -159,6 +180,9 @@ def compare_poison(
         code_fn = all_code_poison_tasks
     micro_tasks = micro_fn(conditions) if task_set in ("all", "micro-qna") else []
     code_tasks = code_fn(conditions) if task_set in ("all", "code") else []
+    if arms == "budget-5":
+        micro_tasks = _tag_aligned_profile(micro_tasks)
+        code_tasks = _tag_aligned_profile(code_tasks)
     summary: Dict[str, Dict[str, object]] = {}
     for system_id, cls in selected.items():
         entry: Dict[str, object] = {}
@@ -379,7 +403,9 @@ def _render_group(
 def _selected_poison_systems(
     system: Optional[str], arms: str
 ) -> Dict[str, Type]:
-    if arms == "budget-4":
+    if arms == "budget-5":
+        catalog = {key: POISON_SYSTEMS[key] for key in BUDGET5_ARMS}
+    elif arms == "budget-4":
         catalog = {key: POISON_SYSTEMS[key] for key in BUDGET4_ARMS}
     else:
         catalog = dict(SYSTEMS)

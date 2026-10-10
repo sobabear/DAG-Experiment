@@ -30,5 +30,11 @@ apps/implementation-comparison/results/**
 apps/implementation-comparison/results/research-30/**
 !apps/implementation-comparison/results/research-30/comparison.md
 !apps/implementation-comparison/results/POISON_RESULTS.md
+# Poison run summaries (small: per-task flags + rates) so code/01..04 can be re-run from a clone.
+# Full transcript/artifact trees under results/poison*/<system>/ stay ignored.
+!apps/implementation-comparison/results/poison*/
+apps/implementation-comparison/results/poison*/**
+!apps/implementation-comparison/results/poison*/score.json
+!apps/implementation-comparison/results/poison*/comparison.md
 .worktrees/
 

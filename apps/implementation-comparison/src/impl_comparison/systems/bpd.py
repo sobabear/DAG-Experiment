@@ -22,6 +22,9 @@ except ImportError:
 
 
 class BpdDagSystem:
+    #: "plurality" = BPD terminal scores from summaries; "uniform" = judge-only ablation.
+    terminal_mode = "plurality"
+
     def __init__(self, model: Any = None, workers: int = 3) -> None:
         self.model = model or WorkspaceAwareLLM()
         self.workers = workers
@@ -123,7 +126,10 @@ class BpdDagSystem:
             _summarize(self.model, request.model, request.task.prompt, proposals, index)
             for index in range(self.workers)
         ]
-        terminal_scores = terminal_scores_from_summaries(summaries, gold, lie)
+        if self.terminal_mode == "uniform":
+            terminal_scores = [1] * len(summaries)
+        else:
+            terminal_scores = terminal_scores_from_summaries(summaries, gold, lie)
         edge_matrix = _judge_edges_batch(self.model, request.model, proposals, summaries)
         worker_scores = backward_propagate(edge_matrix, terminal_scores)
         detected = detect_bpd_outlier(worker_scores)
@@ -155,6 +161,15 @@ class BpdDagSystem:
         if destination.exists():
             shutil.rmtree(destination)
         shutil.copytree(source, destination)
+
+
+class JudgeOnlyBpdSystem(BpdDagSystem):
+    """Ablation: same workers/summarizers/judge as BPD, no terminal-plurality weighting.
+
+    Worker score is the mean judge edge (backprop with uniform terminal scores).
+    """
+
+    terminal_mode = "uniform"
 
 
 def _summarize(

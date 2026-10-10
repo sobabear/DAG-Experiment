@@ -181,6 +181,33 @@ def export_condition_ablation(rows: List[Dict[str, str]]) -> Optional[str]:
     )
 
 
+BUDGET_ARMS = (
+    ("general-agent-system", "general-1"),
+    ("general-majority-3", "general-3 maj."),
+    ("flat-majority-3", "flat-3 maj."),
+    ("judge-only-3", "judge-only-3"),
+    ("dag-bpd", "dag-bpd"),
+)
+
+
+def export_budget(rows: List[Dict[str, str]], run_id: str, caption: str, label: str) -> Optional[str]:
+    headers = ["Arm", "Set"] + [LABELS[m] for m in METRICS] + ["In-tok/task (k)"]
+    body: List[List[str]] = []
+    for system, name in BUDGET_ARMS:
+        for task_set, short in (("micro_qna", "QnA"), ("code", "Code")):
+            row = lookup(rows, run_id, system, task_set)
+            if row is None:
+                continue
+            raw = row.get("input_tokens_per_task") or ""
+            tokens = "{:.1f}".format(float(raw) / 1000.0) if raw else "--"
+            body.append(
+                [name, short] + [metric_cell(row, m) for m in METRICS] + [tokens]
+            )
+    if not body:
+        return None
+    return tabular(headers, body, caption, label)
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     rows = load_rows()
@@ -189,6 +216,25 @@ def main() -> None:
         "tab_yonsei_ab.tex": export_yonsei_ab(rows),
         "tab_weak_vs_strong.tex": export_weak_strong(rows),
     }
+    pilot = export_budget(
+        rows,
+        "poison-budget-4",
+        "Compute-matched pilot (core $n{=}20$ per cell, legacy injection wording). "
+        "Rates with bootstrap 95\\% CI.",
+        "tab:budget4-pilot",
+    )
+    if pilot:
+        mapping["tab_budget4_pilot.tex"] = pilot
+    budget5 = export_budget(
+        rows,
+        "poison-budget-5",
+        "Compute-matched arms with aligned injection wording ($n{=}100$ per cell, "
+        "agent condition). Rates with bootstrap 95\\% CI; last column is mean "
+        "input tokens per task.",
+        "tab:budget5",
+    )
+    if budget5:
+        mapping["tab_budget5.tex"] = budget5
     abl = export_condition_ablation(rows)
     if abl:
         mapping["tab_condition_ablation.tex"] = abl

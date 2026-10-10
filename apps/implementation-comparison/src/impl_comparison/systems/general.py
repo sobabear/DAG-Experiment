@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from ..coding_llm import WorkspaceAwareLLM
-from ..poison_injection import general_agent_message
+from ..poison_injection import general_claim_for
 from ..loop import run_tool_loop
 from ..protocol import RunRequest
 from ..runner import RunnerContext
@@ -22,7 +22,8 @@ class GeneralAgentSystem:
             extra_messages = [
                 {
                     "role": "user",
-                    "content": general_agent_message(
+                    "content": general_claim_for(
+                        meta,
                         str(meta.get("lie", "")),
                         code=(meta.get("grading") == "pytest"),
                     ),

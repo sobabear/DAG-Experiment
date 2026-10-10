@@ -357,6 +357,45 @@ PYTHONPATH=src python -m pytest tests/test_poison.py tests/test_poison_code_task
 3. **code에서 attribution은 BPD만 의미 있게 켜짐** (det 0.40 vs majority 0). 전략 문구 독은 다수결이 출처를 못 짚고, judge/backprop는 일부 짚음.
 4. **병렬 DAG vs 3회 단일 루프:** QnA det는 flat-3(1.00) ≫ general-3(0.15). 같은 3×라도 워커를 나란히 두고 비교하는 쪽이 출처 지목에 유리.
 5. n=20이라 확정적 주장은 보류. Findings에는 “3× matched; QnA는 majority로 충분, code attribution은 BPD”로 쓰는 게 맞음.
+6. **한계(§10에서 보완):** budget-4는 arm마다 주입 문구 강도가 달랐고(general-3은 user 메시지의 약한 문구, flat/BPD는 "Do not use any value from source code" 포함), n=20이며 judge 기여를 분리하는 arm이 없었다. 이 절은 **파일럿**으로만 인용한다.
+
+## 10. Budget-5 — 문구 정렬 + judge-only ablation (2026-10-10, n=100+100)
+
+**변경점 (파일럿 대비)**
+- `injection_profile="aligned"`: general-1 / general-3의 독 replica가 flat·BPD 워커와 **동일 문구**(`agent_worker_prompt`)를 user 메시지로 받음(`poison_injection.aligned_general_message`). 문구 차이로 인한 detection 혼입 제거.
+- 새 arm `judge-only-3` (`JudgeOnlyBpdSystem`): BPD와 같은 3워커→3요약자→독립 judge, 단 terminal plurality 가중 없이 worker 점수 = judge edge 평균. **요약자 투표만 쓰는 arm은 worker 작업공간으로 되돌릴 수 없어(매핑 불가) 만들 수 없다** → judge 기여와 backprop(terminal 가중) 기여를 분리하는 사다리로 대체: flat-3(LLM 없음) → judge-only-3(judge, backprop 가중 없음) → dag-bpd(judge + terminal-weighted backprop).
+- 규모: core 20+20 → **100+100**, 5 arms × 200 = 1,000 runs, `agent` 조건, `gpt-5.6-luna`, max_turns=20, attempts=1.
+- 통계: bootstrap seed를 `hash()`(프로세스마다 달라짐) → `crc32` 안정 seed로 교체(CI 완전 재현). Wilson 구간 + 정확 McNemar(paired, `code/04_paired_tests.py`) 추가. 표에 arm별 입력 토큰/task 열 추가.
+
+**실행:** `compare_poison(Path('results/poison-budget-5'), condition='agent', task_set='all', scale='all', arms='budget-5', max_turns=20)` — 원본 `results/poison-budget-5/` (gitignored).
+**파이프라인:** `code/01..03` → `output/tables/tab_budget5.tex`, `code/04_paired_tests.py poison-budget-5` → `data/processed/paired_poison-budget-5.csv`.
+
+**결과 (n=100 per cell, agent, 1회 실행, 토큰은 입력 k/task)** — 표: `output/tables/tab_budget5.tex`
+
+| arm | QnA acc/prop/det(=rec) | Code acc/prop/det(=rec) | tok QnA / code |
+|-----|------------------------|-------------------------|----------------|
+| general-1 | 0.99 / 0.01 / 0 | 0.84 / 0.11 / 0 | 1.3 / 3.0 |
+| general-3 maj. | 1.00 / 0 / 0 | 1.00 / 0 / 0 | 3.6 / 8.4 |
+| flat-3 maj. | 1.00 / 0 / **1.00** | 0.91 / 0.09 / 0 | 3.0 / 8.1 |
+| judge-only-3 | 1.00 / 0 / 0.84 | 1.00 / 0 / **0.63** | 3.0 / 8.2 |
+| dag-bpd | 1.00 / 0 / 0.88 | 0.99 / 0.01 / **0.63** | 3.0 / 8.1 |
+
+**Paired exact McNemar (`paired_poison-budget-5.csv`)**
+- QnA recovery: flat-3 1.00 vs BPD 0.88 → flat 우세 (12 vs 0 불일치, p=5e-4). BPD vs judge-only 0.88 vs 0.84 → 차이 없음 (12 vs 8, p=0.50).
+- Code recovery: BPD 0.63 vs flat-3 0 / general-3 0 / general-1 0 (모두 p<1e-18). **BPD vs judge-only 0.63 vs 0.63, 불일치 5 vs 5 (p=1.0).**
+- Code accuracy: BPD 0.99 vs flat-3 0.91 (p=0.008), vs general-1 0.84 (p=6e-5); BPD vs general-3 / judge-only 차이 없음.
+
+**해석**
+1. **코드 attribution의 원천은 judge이지 backprop 가중이 아니다.** judge-only-3과 dag-bpd가 사실상 동일(0.63/0.63, 불일치 대칭). terminal plurality 가중은 이 스위트에서 추가 이득이 없다. judge가 없는 같은 3워커(flat-3, general-3)는 code det=0.
+2. **QnA에서는 judge가 오히려 손해.** 문자열 다수결(flat-3)이 det 1.00, judge arm은 0.84–0.88. QnA 답이 짧은 문자열이라 majority로 충분하고 judge는 노이즈를 더한다.
+3. **정확도:** 3× 예산은 code 정확도를 올린다(general-1 0.84 → general-3 1.00). BPD의 code 정확도 이점 중 상당 부분은 3× 앙상블 효과이고, 같은 3×인 flat-3(0.91)보다는 높지만 general-3(1.00)·judge-only(1.00)와는 구분되지 않는다.
+4. **budget-4 파일럿과의 일관성:** QnA 격리는 ensemble로 충분 / code attribution은 judge 필요 — 방향 동일, n=100에서 확정.
+
+**⚠ 해석 주의 (논문에 반드시 명시)**
+- **주입 채널 혼입이 남아 있다.** 문구는 같지만 flat/judge-only/BPD는 *system prompt*에, general-1/general-3은 *user 메시지*에 주입된다. general 독 replica는 거짓을 거의 말하지 않아(QnA prop 0.01) 다수결 det가 0으로 나온다. 이는 "attribution 실패"가 아니라 **독이 출력에 드러나지 않아 지목할 대상이 없는 것**이다. general-3의 det=0을 구조적 한계로 해석하지 말 것.
+- **single-loop 기준선의 QnA 전파는 문구에 민감하다:** legacy 문구 poison-100 0.17, budget-4 파일럿 0.10, aligned 0.01. code는 0.10–0.25로 안정적. → QnA의 "single loop가 거짓을 전파한다"는 강한 주장은 하지 말고, code 결과를 주 증거로 삼는다.
+- majority 탐지는 독 replica가 거짓 문자열을 출력해야 발동(code에서는 전략 문구가 다양해 substring 일치가 어려워 det=0 — judge arm과의 비교는 "judge가 의미 매칭을 해준다"는 효과와 섞임).
+- 단일 실행(attempts=1), 단일 모델. BPD QnA det는 run 간 0.85–0.95로 변동(poison-100 0.85, conditions 0.87, 본 run 0.88).
 
 ---
 

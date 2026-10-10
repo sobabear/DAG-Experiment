@@ -35,6 +35,18 @@
       "path": "results/poison-conditions",
       "score_json": "results/poison-conditions/score.json",
       "comparison_md": "results/poison-conditions/comparison.md"
+    },
+    {
+      "run_id": "poison-budget-4",
+      "path": "results/poison-budget-4",
+      "score_json": "results/poison-budget-4/score.json",
+      "comparison_md": "results/poison-budget-4/comparison.md"
+    },
+    {
+      "run_id": "poison-budget-5",
+      "path": "results/poison-budget-5",
+      "score_json": "results/poison-budget-5/score.json",
+      "comparison_md": "results/poison-budget-5/comparison.md"
     }
   ]
 }

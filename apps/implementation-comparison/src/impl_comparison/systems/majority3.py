@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from ..coding_llm import WorkspaceAwareLLM
 from ..loop import run_tool_loop
 from ..poison import aggregate_proposals
-from ..poison_injection import agent_worker_prompt, general_agent_message
+from ..poison_injection import agent_worker_prompt, general_claim_for
 from ..protocol import RunRequest
 from ..runner import RunnerContext
 
@@ -62,7 +62,7 @@ def _run_isolated_majority(
                 extra_messages = [
                     {
                         "role": "user",
-                        "content": general_agent_message(lie, code=code),
+                        "content": general_claim_for(meta, lie, code=code),
                     }
                 ]
         worker_request = replace(

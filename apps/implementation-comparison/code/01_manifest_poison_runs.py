@@ -18,6 +18,8 @@ DEFAULT_RUNS = (
     "poison-all",
     "poison",
     "poison-conditions",
+    "poison-budget-4",
+    "poison-budget-5",
 )
 
 

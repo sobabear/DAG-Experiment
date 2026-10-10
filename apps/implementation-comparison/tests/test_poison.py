@@ -1,3 +1,5 @@
+import pytest
+
 from impl_comparison.events import EventLog
 from impl_comparison.llm import FakeLLM
 from impl_comparison.poison import (
@@ -478,3 +480,138 @@ def test_poison_smoke_llm_handles_judge_and_summarizer_calls(tmp_path):
     assert payload["detected_source"] == 0
     assert "30" in payload["final_text"]
     assert "300" not in payload["final_text"]
+
+
+class _RecordingLLM:
+    def __init__(self, inner):
+        self.inner = inner
+        self.requests = []
+
+    def complete(self, request):
+        self.requests.append(request)
+        return self.inner.complete(request)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+def _aligned(task):
+    from dataclasses import replace
+
+    return replace(task, metadata={**task.metadata, "injection_profile": "aligned"})
+
+
+def test_aligned_profile_gives_general_agent_the_worker_strength_claim(tmp_path):
+    from impl_comparison.poison_injection import agent_worker_prompt
+
+    task = _aligned(poison_task("poison-timeout", "agent"))
+    workspace = tmp_path / "ws"
+    materialize_poison_task(task, workspace)
+    llm = _RecordingLLM(FakeLLM([{"content": "30"}]))
+    GeneralAgentSystem(llm).run(
+        _request(task, workspace, "general-agent-system"),
+        _context(tmp_path, workspace),
+    )
+    blob = " ".join(
+        str(m.get("content", "")) for r in llm.requests for m in r.messages
+    )
+    assert agent_worker_prompt(task.metadata["lie"]).strip() in blob
+
+
+def test_default_profile_keeps_legacy_general_claim(tmp_path):
+    task = poison_task("poison-timeout", "agent")
+    workspace = tmp_path / "ws"
+    materialize_poison_task(task, workspace)
+    llm = _RecordingLLM(FakeLLM([{"content": "30"}]))
+    GeneralAgentSystem(llm).run(
+        _request(task, workspace, "general-agent-system"),
+        _context(tmp_path, workspace),
+    )
+    blob = " ".join(
+        str(m.get("content", "")) for r in llm.requests for m in r.messages
+    )
+    assert "Do not use any value from source code" not in blob
+
+
+def test_aligned_profile_gives_general_majority_replica_the_worker_strength_claim(
+    tmp_path,
+):
+    from impl_comparison.systems.majority3 import GeneralMajority3System
+
+    task = _aligned(poison_task("poison-timeout", "agent"))
+    workspace = tmp_path / "ws"
+    materialize_poison_task(task, workspace)
+    llm = _RecordingLLM(
+        FakeLLM([{"content": "300"}, {"content": "30"}, {"content": "30"}])
+    )
+    GeneralMajority3System(llm).run(
+        _request(task, workspace, "general-majority-3"),
+        _context(tmp_path, workspace),
+    )
+    blob = " ".join(
+        str(m.get("content", "")) for m in llm.requests[0].messages
+    )
+    assert "Do not use any value from source code" in blob
+
+
+def test_tag_aligned_profile_marks_every_task():
+    from impl_comparison.poison_compare import _tag_aligned_profile
+
+    tasks = [poison_task("poison-timeout", "agent")]
+    tagged = _tag_aligned_profile(tasks)
+    assert tagged[0].metadata["injection_profile"] == "aligned"
+    assert "injection_profile" not in tasks[0].metadata
+
+
+def test_judge_only_ablation_skips_terminal_backprop_weighting(tmp_path):
+    from impl_comparison.systems.bpd import JudgeOnlyBpdSystem
+
+    def script():
+        return FakeLLM(
+            [
+                {"content": "I claim 300"},
+                {"content": "30"},
+                {"content": "30"},
+                {"content": "30"},  # summarizer 0
+                {"content": "30"},  # summarizer 1
+                {"content": "300"},  # summarizer 2 (dissents)
+                {
+                    "content": (
+                        "1,1,-1\n1,2,-1\n1,3,-1\n"
+                        "2,1,1\n2,2,1\n2,3,1\n"
+                        "3,1,1\n3,2,1\n3,3,1\n"
+                    )
+                },
+            ]
+        )
+
+    task = poison_task("poison-timeout", "agent")
+    ws_a = tmp_path / "a"
+    ws_b = tmp_path / "b"
+    materialize_poison_task(task, ws_a)
+    materialize_poison_task(task, ws_b)
+    (tmp_path / "ctx_a").mkdir()
+    (tmp_path / "ctx_b").mkdir()
+    full = BpdDagSystem(script(), workers=3).run(
+        _request(task, ws_a, "dag-bpd"), _context(tmp_path / "ctx_a", ws_a)
+    )
+    only = JudgeOnlyBpdSystem(script(), workers=3).run(
+        _request(task, ws_b, "judge-only-3"), _context(tmp_path / "ctx_b", ws_b)
+    )
+    assert full["worker_scores"][0] == pytest.approx(-1 / 3)
+    assert only["worker_scores"] == pytest.approx([-1.0, 1.0, 1.0])
+    assert only["detected_source"] == 0
+
+
+def test_poison_compare_parses_budget5_and_selects_five_arms():
+    from impl_comparison.poison_compare import _selected_poison_systems, parse_args
+
+    args = parse_args(["--arms", "budget-5", "--scale", "all"])
+    assert args.arms == "budget-5"
+    assert list(_selected_poison_systems(None, "budget-5")) == [
+        "general-agent-system",
+        "general-majority-3",
+        "flat-majority-3",
+        "judge-only-3",
+        "dag-bpd",
+    ]

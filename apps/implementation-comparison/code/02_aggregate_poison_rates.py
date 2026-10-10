@@ -6,6 +6,7 @@ from __future__ import annotations
 import csv
 import json
 import random
+import zlib
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
@@ -15,6 +16,12 @@ SEED = 20260909
 BOOTSTRAP_B = 1000
 METRIC_KEYS = ("accurate", "propagated", "detection_hit", "recovered")
 TASK_SETS = ("micro_qna", "code")
+
+
+def stable_seed(*parts: str) -> int:
+    """Process-independent seed (built-in hash() is salted per process)."""
+    key = "|".join(str(p) for p in parts).encode("utf-8")
+    return SEED + (zlib.crc32(key) % 10_000)
 
 
 def task_flags(tasks: Sequence[Dict[str, Any]]) -> Dict[str, List[int]]:
@@ -93,7 +100,16 @@ def aggregate_run(
                 "task_set": task_set,
                 "condition": "all" if cond_key == "__all__" else cond_key,
                 "n": len(group_tasks),
+                "input_tokens_per_task": None,
+                "output_tokens_per_task": None,
             }
+            if cond_key == "__all__" and group_tasks:
+                tokens = (block.get("metrics") or {}).get("tokens") or {}
+                if "input_tokens" in tokens:
+                    row["input_tokens_per_task"] = tokens["input_tokens"] / len(group_tasks)
+                    row["output_tokens_per_task"] = (
+                        tokens.get("output_tokens", 0) / len(group_tasks)
+                    )
             for key in METRIC_KEYS:
                 values = flags[key]
                 emp = mean(values)
@@ -107,9 +123,7 @@ def aggregate_run(
                         )
                 else:
                     point = emp
-                seed = SEED + (
-                    hash((run_id, system_id, task_set, cond_key, key)) % 10_000
-                )
+                seed = stable_seed(run_id, system_id, task_set, cond_key, key)
                 lo, hi = bootstrap_ci(values, seed=seed)
                 row[key] = point
                 row["{}_ci_low".format(key)] = lo
@@ -130,7 +144,15 @@ def load_and_aggregate(index_path: Path) -> List[Dict[str, Any]]:
 def write_outputs(rows: List[Dict[str, Any]]) -> None:
     PROCESSED.mkdir(parents=True, exist_ok=True)
     csv_path = PROCESSED / "rates_by_run.csv"
-    fieldnames = ["run_id", "system", "task_set", "condition", "n"]
+    fieldnames = [
+        "run_id",
+        "system",
+        "task_set",
+        "condition",
+        "n",
+        "input_tokens_per_task",
+        "output_tokens_per_task",
+    ]
     for key in METRIC_KEYS:
         fieldnames.extend([key, "{}_ci_low".format(key), "{}_ci_high".format(key)])
     with csv_path.open("w", encoding="utf-8", newline="") as handle:

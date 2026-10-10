@@ -1,5 +1,7 @@
 # Poison Attribution in Coding-Agent DAGs
 
+> **New agent / session? Read `HANDOFF.md` first** (status, results, known issues, prioritized backlog, run commands).
+
 ## Research Context
 
 - **Field:** multi-agent LLM systems / coding-agent safety / attribution & resilience
