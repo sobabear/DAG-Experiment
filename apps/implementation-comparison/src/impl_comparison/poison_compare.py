@@ -64,11 +64,11 @@ BUDGET5_ARMS = (
 )
 
 
-def _tag_aligned_profile(tasks):
+def _tag_aligned_profile(tasks, profile: str = "aligned"):
     from dataclasses import replace
 
     return [
-        replace(task, metadata={**task.metadata, "injection_profile": "aligned"})
+        replace(task, metadata={**task.metadata, "injection_profile": profile})
         for task in tasks
     ]
 
@@ -139,10 +139,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--arms",
         default="default",
-        choices=("default", "budget-4", "budget-5"),
+        choices=("default", "budget-4", "budget-5", "budget-6"),
         help=(
             "budget-4: general-1, general-3, flat-3, dag-bpd (legacy wording); "
-            "budget-5: adds judge-only-3 and aligns injection wording across arms"
+            "budget-5: adds judge-only-3 and aligns injection wording across arms; "
+            "budget-6: budget-5 arms with the identical claim in the system prompt "
+            "of every arm (removes the system-vs-user channel confound)"
         ),
     )
     parser.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
@@ -183,6 +185,9 @@ def compare_poison(
     if arms == "budget-5":
         micro_tasks = _tag_aligned_profile(micro_tasks)
         code_tasks = _tag_aligned_profile(code_tasks)
+    elif arms == "budget-6":
+        micro_tasks = _tag_aligned_profile(micro_tasks, "system")
+        code_tasks = _tag_aligned_profile(code_tasks, "system")
     summary: Dict[str, Dict[str, object]] = {}
     for system_id, cls in selected.items():
         entry: Dict[str, object] = {}
@@ -308,6 +313,14 @@ def evaluate_poison_system(
             )
     slots = max(n_slots, 1)
     rates = {key: totals[key] / float(slots) for key in METRIC_KEYS}
+    emitted_flags = [
+        1 if (r["details"] or {}).get("lie_emitted") else 0
+        for r in records
+        if "lie_emitted" in (r["details"] or {})
+    ]
+    if emitted_flags:
+        totals["lie_emitted"] = sum(emitted_flags)
+        rates["lie_emitted"] = sum(emitted_flags) / float(len(emitted_flags))
     payload: Dict[str, object] = {
         "system_id": system_id,
         "suite": SUITE_ID,
@@ -403,7 +416,7 @@ def _render_group(
 def _selected_poison_systems(
     system: Optional[str], arms: str
 ) -> Dict[str, Type]:
-    if arms == "budget-5":
+    if arms in ("budget-5", "budget-6"):
         catalog = {key: POISON_SYSTEMS[key] for key in BUDGET5_ARMS}
     elif arms == "budget-4":
         catalog = {key: POISON_SYSTEMS[key] for key in BUDGET4_ARMS}

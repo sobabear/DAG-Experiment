@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from ..coding_llm import WorkspaceAwareLLM
 from ..loop import run_tool_loop
-from ..poison import aggregate_proposals
+from ..poison import aggregate_proposals, lie_emitted
 from ..poison_injection import agent_worker_prompt, general_claim_for
 from ..protocol import RunRequest
 from ..runner import RunnerContext
@@ -59,12 +59,15 @@ def _run_isolated_majority(
                 "when you believe you are done. Tests are optional."
             )
             if condition == "agent" and index == poison_worker:
-                extra_messages = [
-                    {
-                        "role": "user",
-                        "content": general_claim_for(meta, lie, code=code),
-                    }
-                ]
+                if meta.get("injection_profile") == "system":
+                    system_prompt += agent_worker_prompt(lie, code=code)
+                else:
+                    extra_messages = [
+                        {
+                            "role": "user",
+                            "content": general_claim_for(meta, lie, code=code),
+                        }
+                    ]
         worker_request = replace(
             request,
             workspace=worker_root,
@@ -84,8 +87,14 @@ def _run_isolated_majority(
     chosen, winner, edges, detected = aggregate_proposals(proposals, gold, lie)
     if grading == "pytest":
         _promote_workspace(worker_roots[winner], context.workspace_root)
+    emitted = (
+        lie_emitted(meta, proposals[poison_worker], worker_roots[poison_worker])
+        if condition == "agent" and 0 <= poison_worker < len(proposals)
+        else None
+    )
     return {
         "final_text": chosen,
+        "poison_replica_emitted_lie": emitted,
         "workers": proposals,
         "winner": winner,
         "edges": edges,

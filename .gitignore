@@ -38,3 +38,12 @@ apps/implementation-comparison/results/poison*/**
 !apps/implementation-comparison/results/poison*/comparison.md
 .worktrees/
 
+# LaTeX build artifacts (paper sources and official ACL style files stay tracked)
+apps/implementation-comparison/paper/*.aux
+apps/implementation-comparison/paper/*.bbl
+apps/implementation-comparison/paper/*.blg
+apps/implementation-comparison/paper/*.fdb_latexmk
+apps/implementation-comparison/paper/*.fls
+apps/implementation-comparison/paper/*.log
+apps/implementation-comparison/paper/*.out
+apps/implementation-comparison/paper/*.pdf

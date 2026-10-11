@@ -15,6 +15,7 @@ PROCESSED = ROOT / "data" / "processed"
 SEED = 20260909
 BOOTSTRAP_B = 1000
 METRIC_KEYS = ("accurate", "propagated", "detection_hit", "recovered")
+OPTIONAL_METRICS = ("lie_emitted",)
 TASK_SETS = ("micro_qna", "code")
 
 
@@ -76,6 +77,41 @@ def _condition_from_task(task: Dict[str, Any]) -> str:
     return "unknown"
 
 
+def _add_optional_metrics(
+    row: Dict[str, Any],
+    run_id: str,
+    system_id: str,
+    task_set: str,
+    cond_key: str,
+    tasks: Sequence[Dict[str, Any]],
+) -> None:
+    """Metrics recorded only by newer runs; left blank (None) when absent."""
+    recorded = [t for t in tasks if "lie_emitted" in (t.get("details") or {})]
+    if not recorded:
+        for key in OPTIONAL_METRICS:
+            row[key] = None
+            row["{}_ci_low".format(key)] = None
+            row["{}_ci_high".format(key)] = None
+        row["n_lie_emitted"] = None
+        row["detection_given_emitted"] = None
+        return
+    flags = [1 if (t["details"] or {}).get("lie_emitted") else 0 for t in recorded]
+    lo, hi = bootstrap_ci(
+        flags, seed=stable_seed(run_id, system_id, task_set, cond_key, "lie_emitted")
+    )
+    row["lie_emitted"] = mean(flags)
+    row["lie_emitted_ci_low"] = lo
+    row["lie_emitted_ci_high"] = hi
+    emitted = [t for t in recorded if (t["details"] or {}).get("lie_emitted")]
+    row["n_lie_emitted"] = len(emitted)
+    if emitted:
+        row["detection_given_emitted"] = mean(
+            [1 if (t["details"] or {}).get("detection_hit") else 0 for t in emitted]
+        )
+    else:
+        row["detection_given_emitted"] = None
+
+
 def aggregate_run(
     run_id: str, score: Dict[str, Any], *, split_condition: bool = True
 ) -> List[Dict[str, Any]]:
@@ -102,6 +138,8 @@ def aggregate_run(
                 "n": len(group_tasks),
                 "input_tokens_per_task": None,
                 "output_tokens_per_task": None,
+                "n_timeout": sum(1 for t in group_tasks if t.get("status") == "timeout"),
+                "n_retried": len(block.get("retried_task_ids") or []),
             }
             if cond_key == "__all__" and group_tasks:
                 tokens = (block.get("metrics") or {}).get("tokens") or {}
@@ -128,6 +166,7 @@ def aggregate_run(
                 row[key] = point
                 row["{}_ci_low".format(key)] = lo
                 row["{}_ci_high".format(key)] = hi
+            _add_optional_metrics(row, run_id, system_id, task_set, cond_key, group_tasks)
             rows.append(row)
     return rows
 
@@ -152,9 +191,12 @@ def write_outputs(rows: List[Dict[str, Any]]) -> None:
         "n",
         "input_tokens_per_task",
         "output_tokens_per_task",
+        "n_timeout",
+        "n_retried",
     ]
-    for key in METRIC_KEYS:
+    for key in METRIC_KEYS + OPTIONAL_METRICS:
         fieldnames.extend([key, "{}_ci_low".format(key), "{}_ci_high".format(key)])
+    fieldnames.extend(["n_lie_emitted", "detection_given_emitted"])
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()

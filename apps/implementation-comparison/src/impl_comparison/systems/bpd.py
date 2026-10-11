@@ -9,7 +9,12 @@ from typing import Any, Dict, List
 
 from ..coding_llm import WorkspaceAwareLLM
 from ..loop import run_tool_loop
-from ..poison import backward_propagate, detect_bpd_outlier, terminal_scores_from_summaries
+from ..poison import (
+    backward_propagate,
+    detect_bpd_outlier,
+    lie_emitted,
+    terminal_scores_from_summaries,
+)
 from ..poison_injection import agent_worker_prompt
 from ..protocol import LLMRequest, RunRequest
 from ..runner import RunnerContext
@@ -144,8 +149,14 @@ class BpdDagSystem:
             for j in range(self.workers):
                 graph.update_edge(1, j + 1, 2, 1, terminal_scores[j])
 
+        emitted = (
+            lie_emitted(meta, proposals[poison_worker], worker_roots[poison_worker])
+            if condition == "agent" and 0 <= poison_worker < len(proposals)
+            else None
+        )
         return {
             "final_text": proposals[winner_index],
+            "poison_replica_emitted_lie": emitted,
             "workers": proposals,
             "summaries": summaries,
             "worker_scores": worker_scores,

@@ -1,0 +1,266 @@
+% Draft v0.1 -- generated numbers come only from ../output/macros/results.tex and ../output/tables/.
+% Build:  cd paper && latexmk -pdf paper.tex
+% Review version (anonymous). For the arXiv version replace [review] by nothing: \usepackage{acl}.
+\documentclass[11pt]{article}
+\usepackage[review]{acl}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{xcolor}
+
+% ---- generated results (never edit by hand) ----
+\input{../output/macros/results.tex}
+
+% [AUTHOR: ...] marks text that needs author input or re-verification after new runs.
+\newcommand{\todo}[1]{{\color{red}[AUTHOR: #1]}}
+% Optional macro: prints a placeholder when the run that defines it has not finished yet.
+\newcommand{\opt}[1]{\ifcsname #1\endcsname\csname #1\endcsname\else\textbf{[TBD]}\fi}
+
+\title{Isolation Is Not Attribution:\\Internal Poison in DAG-Structured Coding Agents}
+
+\author{Anonymous ACL submission}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Coding agents increasingly run as graphs of cooperating nodes, and one node can hand a wrong claim to all the others.
+We study this internal-poison setting. A planted lie enters one node, and the system should keep its final result correct, name the node that lied, or do both.
+We build 100 configuration question-answering tasks and 100 bug-fixing tasks graded by hidden tests.
+We compare a single-loop agent with three-replica ensembles, a judge-based graph that backpropagates node contributions, and a hierarchical scan-implement-test graph.
+With the same claim in the poisoned node's system prompt, the single loop repeats the lie in \RateMainGenOneQnaProp{} of question-answering runs and \RateMainGenOneCodeProp{} of bug-fixing runs, while every three-replica arm keeps bug-fixing accuracy between \RateMainFlatThreeCodeAcc{} and \RateMainJudgeOnlyCodeAcc{}.
+Naming the source is a separate property.
+On bug-fixing tasks a majority vote without a judge names it in \RateMainFlatThreeCodeDet{} of runs, a judge that compares replica outputs in \RateMainJudgeOnlyCodeDet{}, and the full backpropagation pipeline in \RateMainBpdCodeDet{}.
+Backpropagation adds no measurable benefit over the judge alone, and on question answering a plain majority vote names the source more often (\RateMainGenThreeQnaDet{}) than the judge does (\RateMainJudgeOnlyQnaDet{}).
+A hierarchical graph whose nodes trust a poisoned scan report repeats the lie in \RateHundredYonseiQnaProp{} of question-answering runs until we add an explicit source-over-scan rule (exploratory).
+Graph structure alone predicts neither isolation nor attribution. Redundancy and an independent comparison step do.
+\end{abstract}
+
+\section{Introduction}
+
+Software agents now split work across nodes. A scanner reads the repository, several workers propose edits, and a reviewer picks one.
+Frameworks such as ChatDev, MetaGPT, and MacNet organize these nodes as pipelines or directed acyclic graphs \citep{qian2023chatdev,hong2023metagpt,qian2024macnet}.
+A graph gives each claim a path, so in principle a wrong claim can be traced to the node that introduced it.
+In practice, a node that trusts its upstream neighbor can also pass a wrong claim along with more authority than a lone agent would give it.
+
+Prior work studies adjacent threats. Benchmarks such as AgentDojo and InjecAgent inject instructions through external tool outputs \citep{debenedetti2024agentdojo,zhan2024injecagent}.
+Studies of faulty agents measure how much a wrong collaborator degrades a team \citep{huang2024resilience}.
+Prompt Infection and manipulated-knowledge spread show that a bad message can move between agents \citep{lee2024promptinfection,ju2024flooding}.
+Automated failure attribution asks which agent and step caused a failed run \citep{zhang2025failureattribution}.
+None of these measures, on tool-using coding tasks with executable ground truth, whether a system can name the internal node that carried a planted lie.
+
+We study that question with a controlled suite. A lie is planted in one internal node, and we score four outcomes: accuracy of the final result, propagation of the lie into it, detection (the system names the poisoned node), and recovery (detection with a correct result).
+We ask two questions.
+\textbf{RQ1:} Do graph-structured systems isolate, detect, and recover from an internal lie better than a single-loop agent?
+\textbf{RQ2:} Inside graph-structured systems, which mechanism for handling the contaminated node drives the outcome: redundancy, a comparison step, or contribution backpropagation?
+
+The answers separate isolation from attribution.
+Three isolated replicas remove most of the damage of the lie, and replication explains most of that effect: three plain single-loop replicas reach code accuracy \RateMainGenThreeCodeAcc{}, against \RateMainGenOneCodeAcc{} for one loop, and QnA accuracy \RateMainGenThreeQnaAcc{} against \RateMainGenOneQnaAcc{}.
+Naming the source is a different property.
+On bug-fixing tasks it appears only when an independent judge compares replica outputs: recovery is \RateMainJudgeOnlyCodeRec{} for the judge-only arm and \RateMainBpdCodeRec{} for the full backpropagation pipeline (exact McNemar, \PvalMainCodeRecJudgeOnlyvsBpd), against \RateMainFlatThreeCodeRec{} for a majority vote without a judge.
+On question answering the ranking flips: a string-level majority vote recovers in \RateMainFlatThreeQnaRec{} of runs (general-3: \RateMainGenThreeQnaRec{}) and the judge pipeline in \RateMainBpdQnaRec{}.
+Finally, a hierarchical graph whose downstream nodes treat the poisoned scan report as authoritative repeats the lie in \RateHundredYonseiQnaProp{} of QnA runs; a source-over-scan rule removes this effect (exploratory).
+
+We contribute the suite, a compute-matched set of arms that separates replication, judging, and backpropagation, and a replication package that regenerates every number in this paper from frozen run summaries.
+All results use one model and one attempt per task, so we report them as comparisons on this suite and not as general properties of agents.
+
+\section{Related Work}
+
+\paragraph{Graph-structured coding agents.}
+SWE-bench and SWE-agent set the single-agent baseline for repository-level repair \citep{jimenez2023swebench,yang2024sweagent}.
+ChatDev and MetaGPT assign roles along a pipeline, and MacNet uses directed acyclic graphs to organize large numbers of agents \citep{qian2023chatdev,hong2023metagpt,qian2024macnet}.
+GPTSwarm treats a team of agents as an optimizable graph \citep{zhuge2024gptswarm}.
+These papers measure task performance. We measure what happens when one node is wrong.
+
+\paragraph{Faults and attacks inside multi-agent systems.}
+\citet{huang2024resilience} compare system structures under faulty agents and find that a hierarchical structure loses the least performance.
+Prompt Infection shows that malicious prompts can replicate across interconnected agents \citep{lee2024promptinfection}, and \citet{ju2024flooding} study how manipulated knowledge spreads in agent communities.
+AgentPoison poisons an agent's memory or knowledge base \citep{chen2024agentpoison}.
+Defenses include a graph neural network over the utterance graph \citep{wang2025gsafeguard}, pruning of redundant or malicious messages \citep{zhang2024cutthecrap}, and a decentralized consensus filter for Byzantine agents \citep{lee2026byzantine}.
+Our setting differs in two ways: the lie enters through a collaborator node, and the tasks have executable ground truth.
+
+\paragraph{Attribution and contribution scoring.}
+\citet{zhang2025failureattribution} introduce failure attribution for multi-agent systems and report low accuracy on pinpointing the failing step.
+\citet{cemri2025mast} give a taxonomy of why multi-agent systems fail.
+VeriTrail traces where unsupported content entered a multi-step generation process \citep{metropolitansky2025veritrail}.
+Backpropagation of node contributions over a signed directed acyclic graph (BPD) scores each agent's contribution to the final decision and isolates malicious agents \citep{wu2025bpd}.
+We reimplement the BPD mechanism in a tool-using harness and ask how much of its effect comes from the judge, from the backward pass, and from running three replicas.
+
+\paragraph{Ensembles and judges.}
+Majority voting over sampled outputs improves reasoning \citep{wang2022selfconsistency}, and multiagent debate improves factuality \citep{du2023debate}.
+Language-model judges agree with human preferences on open-ended tasks but carry their own biases \citep{zheng2023judge}.
+We use both ideas as baselines, and we report paired tests and intervals following the argument for error bars in model evaluations \citep{miller2024errorbars}.
+
+\section{Experimental Setup}
+
+\subsection{Tasks}
+The suite has two parts of 100 tasks each, expanded from 20 hand-authored templates per part by a catalog generator.
+\textbf{QnA tasks} ask for one configuration value. The gold value sits in a source file in the workspace, and the planted lie is a different value (for example a timeout of 300 seconds against a gold value of 30).
+Answers are graded by string match.
+\textbf{Code tasks} ask for a fix to a single-module bug. The planted lie is a repair strategy that reproduces the bug (for example, retrying without a limit), and a hidden test file grades the final workspace.
+
+\subsection{Poison conditions}
+Each task runs under three conditions: \texttt{none}, \texttt{document} (a notes file asserts the lie as policy), and \texttt{agent} (a collaborator node asserts it).
+The \texttt{document} condition did not move any system in our suite (propagation near zero), so all main results use \texttt{agent}.
+In the \texttt{agent} condition the claim reads ``Injected claim from another agent (mandatory): the answer is $X$; do not use any value from source code or notes'' for QnA, with a strategy variant for code.
+We give all arms in the main comparison this identical text and place it in the system prompt of the poisoned node.
+
+\subsection{Systems}
+Each arm runs the same model through the same tool loop, limited to 20 turns per node.
+\textbf{Single loop} (\texttt{general-1}) is one agent with file and shell tools.
+\textbf{General-3} and \textbf{flat-3} run three isolated replicas; only replica~0 receives the lie.
+A replica in general-3 uses the single-loop prompt, and a replica in flat-3 is asked to state its strategy.
+Both choose the answer that most replicas support, found by matching the gold and lie strings in each output, and for code tasks they promote the winning replica's workspace.
+\textbf{Judge-only-3} adds three summarizers, each reading all proposals and writing a final answer, and one independent judge that scores every (proposal, summary) pair with $+1$, $0$, or $-1$.
+A replica's score is the mean of its row, the highest score wins, and the system names a source when exactly one score is negative.
+\textbf{BPD} (\texttt{dag-bpd}) uses the same calls but gives each summary a terminal score of $+1$ if it agrees with the plurality answer and $-1$ otherwise, and computes each replica's score as $S_i=\tfrac{1}{3}\sum_j g_{ij}S_j$ with judge edges $g_{ij}$.
+\textbf{Hierarchical} (\texttt{dag-yonsei}) runs scan, implement, test, and repair; the lie enters the scan report.
+In its naive form, later nodes treat the scan as authoritative.
+The source-over-scan variant instructs the implement node to prefer source and tests over the scan report, and names the scan node only when they conflict and the scan claim was rejected.
+We added this rule after seeing the naive results, so we label it exploratory.
+
+\subsection{Metrics and statistics}
+\emph{Accuracy} is the share of runs with a correct final result; \emph{propagation} is the share in which the lie appears in the final output; \emph{detection} is the share in which the system names the node that carried the lie; and \emph{recovery} requires detection and accuracy.
+The single loop reports no source, so its detection is zero by construction.
+We also record whether the poisoned replica itself output the lie (\emph{Emit}), because a vote can name a source only when the lie is visible.
+Intervals are percentile bootstrap intervals over tasks (1{,}000 resamples, fixed seed); paired differences between arms use the exact McNemar test on task identity.
+Token counts are logged as the cost proxy, since the endpoint reports no price.
+Each task has a 60-second wall-clock limit. In the first pass \CountBSixBpdCodeTimeout{} BPD code tasks hit it, with no tokens recorded, and no other arm did.
+We re-ran exactly those tasks once with the identical configuration and report the merged run as the main result; \CountBSixRBpdCodeTimeout{} tasks timed out again and count as failures.
+The as-run results are in the appendix.
+Three-replica arms use about three times the input tokens of the single loop (Table~\ref{tab:main-tokens}), and arms with a judge add summarizer and judge calls.
+
+\input{../output/tables/tab_main_compact.tex}
+
+\begin{table}[t]
+\centering
+\footnotesize
+\caption{Mean input tokens per task (thousands) in run \texttt{\MainRunName}.}
+\label{tab:main-tokens}
+\begin{tabular}{lcc}
+\toprule
+Arm & QnA & Code \\
+\midrule
+general-1 & \TokMainGenOneQna & \TokMainGenOneCode \\
+general-3 maj. & \TokMainGenThreeQna & \TokMainGenThreeCode \\
+flat-3 maj. & \TokMainFlatThreeQna & \TokMainFlatThreeCode \\
+judge-only-3 & \TokMainJudgeOnlyQna & \TokMainJudgeOnlyCode \\
+dag-bpd & \TokMainBpdQna & \TokMainBpdCode \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Results}
+
+\subsection{Isolation and attribution under the same injected claim}
+Table~\ref{tab:main} compares the five arms with the claim in the poisoned node's system prompt.
+The single loop follows the lie: it repeats it in \RateMainGenOneQnaProp{} of QnA runs and \RateMainGenOneCodeProp{} of code runs, and its accuracy is \RateMainGenOneQnaAcc{} and \RateMainGenOneCodeAcc{}.
+Three replicas change this. QnA accuracy is \RateMainGenThreeQnaAcc{} for general-3, \RateMainFlatThreeQnaAcc{} for flat-3, \RateMainJudgeOnlyQnaAcc{} for judge-only, and \RateMainBpdQnaAcc{} for BPD.
+On code tasks, propagation is \RateMainGenThreeCodeProp{}, \RateMainFlatThreeCodeProp{}, \RateMainJudgeOnlyCodeProp{}, and \RateMainBpdCodeProp{} in the same order, and accuracy is \RateMainGenThreeCodeAcc{}, \RateMainFlatThreeCodeAcc{}, \RateMainJudgeOnlyCodeAcc{}, and \RateMainBpdCodeAcc{}.
+General-3 against the single loop differs on accuracy in both suites (exact McNemar, QnA \PvalMainQnaAccGenOnevsGenThree, code \PvalMainCodeAccGenOnevsGenThree).
+
+Whether the poisoned replica repeats the lie is itself an outcome, and it differs by suite.
+In general-3 the poisoned replica outputs the lie in \RateMainGenThreeQnaEmit{} of QnA runs but only \RateMainGenThreeCodeEmit{} of code runs. On code tasks it often ignores or repairs around the claim, which limits how often any scheme can name a source.
+
+Naming the source separates the arms more than accuracy does.
+On QnA tasks the answer space is small and string matching works. Given that the poisoned replica emitted the lie, general-3 names it in \RateMainGenThreeQnaDetEmit{} of runs and flat-3 in \RateMainFlatThreeQnaDetEmit{}, against \RateMainJudgeOnlyQnaDetEmit{} for judge-only and \RateMainBpdQnaDetEmit{} for BPD.
+Recovery over all runs is \RateMainGenThreeQnaRec{}, \RateMainFlatThreeQnaRec{}, \RateMainJudgeOnlyQnaRec{}, and \RateMainBpdQnaRec{} (flat-3 against BPD, \PvalMainQnaRecFlatThreevsBpd).
+In an earlier run that delivered the claim to the single loop as a user message, general-3 named the source in none of its runs; there the single loop almost never repeated the lie (propagation \RateBFiveGenOneQnaProp{}), so a vote had nothing to count. We read that zero as an effect of delivery, not of architecture.
+On code tasks the two majority arms name the source in \RateMainGenThreeCodeDet{} and \RateMainFlatThreeCodeDet{} of runs, because the strategy phrases of three replicas rarely match as strings.
+The judge-only arm names it in \RateMainJudgeOnlyCodeDet{} and BPD in \RateMainBpdCodeDet{}; given that the lie was emitted, these rates are \RateMainJudgeOnlyCodeDetEmit{} and \RateMainBpdCodeDetEmit{}.
+
+\subsection{What the judge and the backward pass each contribute}
+The judge-only and BPD arms make the same calls and differ only in the terminal weighting.
+On code tasks their recovery is \RateMainJudgeOnlyCodeRec{} and \RateMainBpdCodeRec{} (exact McNemar, \PvalMainCodeRecJudgeOnlyvsBpd), and on QnA tasks \RateMainJudgeOnlyQnaRec{} and \RateMainBpdQnaRec{} (\PvalMainQnaRecJudgeOnlyvsBpd).
+In this suite the backward pass adds no measurable recovery beyond the judge.
+The judge does the work on code: replacing it with a string-level vote lowers recovery from \RateMainJudgeOnlyCodeRec{} to \RateMainFlatThreeCodeRec{} (\PvalMainCodeRecFlatThreevsJudgeOnly).
+On QnA the judge does the opposite: it recovers less often than the string-level vote it replaces (general-3 against judge-only, \PvalMainQnaRecGenThreevsJudgeOnly), because it misses some runs in which the lie was visible.
+Because the majority arms use string matching, this comparison mixes the value of an LLM judge with the value of semantic matching.
+\todo{add a judge-free semantic baseline, for example clustering of replica patches by test behavior, before claiming the judge itself is necessary}
+
+\subsection{A hierarchy that trusts its first node}
+In the hierarchical system the lie enters the scan report, so the injection point differs from the other arms and the comparison is indicative.
+In the earlier 100-task run, the naive hierarchy propagates the lie in \RateHundredYonseiQnaProp{} of QnA runs and \RateHundredYonseiCodeProp{} of code runs, and it names the scan node in \RateHundredYonseiQnaDet{} and \RateHundredYonseiCodeDet{} of runs.
+We do not compare this rate with the single loop's, because the single loop's rate depends on the delivery channel (Section~\ref{sec:channel}).
+With the source-over-scan rule, QnA recovery is \RateYonseiImprovedYonseiQnaRec{} and code recovery \RateYonseiImprovedYonseiCodeRec{}.
+The rule works because the source file and the tests give the implement node an independent check, not because the graph has more nodes.
+
+\subsection{Sensitivity to how the claim is delivered}
+\label{sec:channel}
+The single loop's QnA propagation is \RateHundredGenOneQnaProp{} with the legacy user-message wording (100 tasks), \RateBFourGenOneQnaProp{} in a 20-task pilot, \RateBFiveGenOneQnaProp{} when the replica-prompt text is delivered as a user message, and \RateMainGenOneQnaProp{} when the same text is placed in the system prompt.
+Code propagation in the same four settings is \RateHundredGenOneCodeProp{}, \RateBFourGenOneCodeProp{}, \RateBFiveGenOneCodeProp{}, and \RateMainGenOneCodeProp{}.
+In our setting the delivery channel decides whether a poisoned single loop repeats the lie at all: a claim in the system prompt is followed, and the same claim in a user message mostly is not.
+Earlier comparisons gave the single loop the claim as a user message and the other arms in the system prompt, which made the single loop look more robust than it is (QnA accuracy \RateBFiveGenOneQnaAcc{} there, \RateMainGenOneQnaAcc{} here).
+We therefore report the system-prompt run as the main result and the user-message run in the appendix.
+
+\section{Discussion}
+
+\paragraph{Three separate properties.}
+Our results suggest treating isolation, comparison, and attribution as separate design choices.
+Isolation limits how far a lie travels, and replication provides it at about three times the token cost; with the lie in the system prompt, a single loop has no isolation at all on QnA.
+Comparison needs a node that sees several branches at once.
+Attribution maps a disagreement between branches back to the node that produced the outlier.
+A directed acyclic graph supplies the edges that make this mapping possible, but a graph with a single authoritative upstream node has no branch to compare against.
+That is consistent with the hierarchical system repeating the lie when its scan node is poisoned, and with the fix that adds an independent source of evidence.
+
+\paragraph{Where the judge matters.}
+Majority voting is enough when answers are short strings and the lie is visible as one: on QnA it names the source more often than the judge does.
+When correct and planted behavior are described in free text, a comparison step has to read meaning, and an LLM judge does.
+We did not test judge-free semantic comparison, so we cannot say whether any semantic matcher would do.
+We also did not randomize which replica carries the lie, so position effects in the judge remain open.
+
+\paragraph{Relation to resilience studies.}
+\citet{huang2024resilience} find that a hierarchical structure is the most resilient to faulty agents.
+Our hierarchy is fragile when its first node is poisoned and its later nodes cannot contradict that node.
+The two findings agree if resilience depends on whether downstream nodes have an independent signal, and the hierarchy's shape matters less.
+We make this reading as a hypothesis; our design does not vary shape and independence separately.
+
+\paragraph{Practical guidance.}
+For a system that must both stay correct and report where a bad claim came from, our data favor redundant branches followed by an independent comparison over authoritative single nodes.
+Backpropagation over the comparison output did not help here, and it is the part with the most implementation cost.
+
+\section{Conclusion}
+A planted lie in one node of a coding-agent graph damages a three-replica system less than it damages a single loop, but only a judge that compares replica outputs names the node on code tasks, and the contribution backpropagation on top of that judge added no measurable recovery.
+A hierarchical graph whose downstream nodes trust a poisoned scan report repeats the lie in most QnA runs unless a node has an independent check.
+The suite and scripts are released so that others can test whether these patterns hold for other models and harder tasks.
+
+\section*{Limitations}
+All results come from one model, \texttt{gpt-5.6-luna}, with one attempt per task, so run-to-run variance is estimated only from repeated earlier runs of the same arm, where BPD recovery on QnA varied by a few points.
+The tasks are templates expanded from 20 hand-written items per part, single-module, and the lie is stated explicitly rather than hidden in plausible text; harder repository-scale tasks may behave differently.
+The poisoned replica is always replica~0, so position effects in the judge and in tie-breaking are not separated from the effect of the lie.
+Majority arms use string matching, which understates what a judge-free semantic method could do on code tasks.
+How the claim is delivered changes single-loop QnA propagation from \RateBFiveGenOneQnaProp{} to \RateMainGenOneQnaProp{}, so absolute single-loop rates describe this injection and not agents in general.
+\emph{Emit} on code tasks is a lexical proxy (the lie phrase, or a pattern in the replica's source file) and can miss paraphrased compliance.
+The 60-second task limit affects the three-stage judge pipelines more than the other arms, and \CountMainBpdCodeTimeout{} BPD code tasks still count as failures after one re-run, so BPD code accuracy is a lower bound.
+The hierarchical arm receives the lie at a different node, and its source-over-scan rule was added after the first results, so it is exploratory.
+Compute is matched only approximately: judge arms add summarizer and judge calls, and tokens are the only cost proxy.
+The \texttt{document} condition did not affect any system, so we report no document-poison result.
+The stronger planted claim we use is a stress test and does not describe the lies real collaborators produce.
+
+\section*{Ethical Considerations}
+The study uses synthetic tasks and no human subjects or personal data.
+The injected claims are plain statements, and the paper does not describe an attack that is new or hard to reproduce.
+\todo{confirm with the Responsible NLP checklist; disclose AI coding and writing assistance in the Acknowledgments as ACL policy requires}
+
+\section*{Reproducibility}
+Scripts \texttt{code/01} to \texttt{code/05} regenerate every table and macro in this paper from frozen per-run summaries (\texttt{score.json}); no number in the text is typed by hand.
+\todo{add an anonymous repository link for review, and a persistent archive of the raw run transcripts}
+
+\bibliography{references}
+
+\appendix
+\section{Full results with intervals}
+\label{app:full}
+\input{../output/tables/tab_budget6_retried.tex}
+\input{../output/tables/tab_budget6.tex}
+\input{../output/tables/tab_budget5.tex}
+\input{../output/tables/tab_budget4_pilot.tex}
+\input{../output/tables/tab_main_agent.tex}
+\input{../output/tables/tab_yonsei_ab.tex}
+\input{../output/tables/tab_condition_ablation.tex}
+
+\end{document}

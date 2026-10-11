@@ -10,7 +10,7 @@
 
 ## Abstract (English, paper-ready draft)
 
-Tool-using coding agents increasingly collaborate through multi-step or multi-agent pipelines, yet little is known about how they behave when an *internal* collaborator—not an external attacker—is fed a planted lie. We study this setting with a fixed suite of controlled configuration QnA tasks and code-verifiable bug-fix tasks (hidden pytest), comparing a single-loop agent to two DAG-structured systems: a faithful contribution-backpropagation (BPD) pipeline and a hierarchical scan→implement→test graph (Yonsei). We measure accuracy, lie propagation, source attribution (detection), and recovery. Under strong agent-side injection, the single-loop agent never attributes the poison source (detection = 0) and still propagates the lie on a non-trivial fraction of tasks. A BPD-style DAG isolates and recovers substantially more often (QnA recovery ≈ 0.85–0.88; code ≈ 0.63–0.64). Compute-matched controls (n=100+100, three-replica arms) show that much of this is an ensemble effect and that, for code, source attribution comes from an independent judge rather than from backward propagation: judge-only scoring matches full BPD (0.63 vs 0.63), while judge-free majority arms attribute nothing. Crucially, DAG *topology alone* is not sufficient: when Yonsei treats a poisoned scan node as authoritative, lie propagation on QnA exceeds the single-loop baseline (≈ 0.71 vs ≈ 0.17). Adding an explicit source-over-scan rule restores isolation and attribution for Yonsei, but through a different mechanism than BPD. Condition ablations (`none` / `document` / `agent`) show that attribution and recovery concentrate on the agent-injection path. We conclude that DAGs enlarge the design space for node-level isolation and attribution relative to single-loop agents, while contaminated-node handling—not the DAG label—determines whether that space yields recovery.
+Tool-using coding agents increasingly collaborate through multi-step or multi-agent pipelines, yet little is known about how they behave when an *internal* collaborator—not an external attacker—is fed a planted lie. We study this setting with a fixed suite of controlled configuration QnA tasks and code-verifiable bug-fix tasks (hidden pytest), comparing a single-loop agent to two DAG-structured systems: a faithful contribution-backpropagation (BPD) pipeline and a hierarchical scan→implement→test graph (Yonsei). We measure accuracy, lie propagation, source attribution (detection), and recovery. Under strong agent-side injection, the single-loop agent never attributes the poison source (detection = 0) and still propagates the lie on a non-trivial fraction of tasks. A BPD-style DAG isolates and recovers substantially more often (QnA recovery ≈ 0.85–0.88; code ≈ 0.63–0.64). Compute-matched controls (n=100+100, three-replica arms) show that much of this is an ensemble effect and that, for code, source attribution comes from an independent judge rather than from backward propagation: judge-only scoring matches full BPD (0.63 vs 0.63), while judge-free majority arms attribute nothing. Crucially, DAG *topology alone* is not sufficient: when Yonsei treats a poisoned scan node as authoritative, it repeats the lie in ≈ 0.71 of QnA runs (exploratory; not compared with the single loop, whose rate depends on the injection channel: 0.01 as a user message, 1.00 in the system prompt). Adding an explicit source-over-scan rule restores isolation and attribution for Yonsei, but through a different mechanism than BPD. Condition ablations (`none` / `document` / `agent`) show that attribution and recovery concentrate on the agent-injection path. We conclude that DAGs enlarge the design space for node-level isolation and attribution relative to single-loop agents, while contaminated-node handling—not the DAG label—determines whether that space yields recovery.
 
 **Keywords:** multi-agent LLM, coding agents, attribution, poison / misinformation, DAG, BPD
 
@@ -22,7 +22,7 @@ Tool-using coding agents increasingly collaborate through multi-step or multi-ag
 
 - 단일 루프는 출처를 못 짚는다 (detection = 0).
 - BPD형 DAG는 격리·복구가 크지만, 3× 예산 통제 결과 상당 부분은 앙상블 효과이고 code attribution은 backprop이 아니라 **judge**에서 온다 (judge-only = BPD).
-- DAG **형태만**으로는 부족하다. scan을 맹신하는 Yonsei는 QnA에서 general보다 독을 더 잘 퍼뜨렸다.
+- DAG **형태만**으로는 부족하다. scan을 맹신하는 Yonsei는 QnA에서 독을 0.71 전파한다(exploratory; 단일 루프와의 비교는 주입 채널에 따라 방향이 바뀌므로 철회).
 - source-우선 규칙을 넣으면 Yonsei도 회복하지만, 메커니즘은 BPD와 다르다.
 
 **한 줄 contribution:** DAG는 노드 단위 독/attribution을 *가능하게* 하지만, 오염 노드 처리가 recovery를 가른다. “DAG라서 항상 안전”은 데이터가 거부한다.
@@ -109,6 +109,9 @@ BPD = 동료 출력 비교 · Yonsei rule = 소스/테스트 권위.
 - “Yonsei source-rule = BPD와 동일”
 - poison rates를 research-30 Index와 합산·순위 비교
 - 약한 주입 파일럿의 yonsei det=1.0을 진짜 attribution으로 과장
+- “계층형(Yonsei)이 단일 루프보다 독을 더 전파한다” (단일 루프의 전파율은 주입 채널에 따라 0.01–1.00으로 변해 방향이 뒤집힘)
+- “단일 루프는 거짓에 견고하다” / “general-3은 attribution이 구조적으로 불가능하다” (둘 다 user 메시지 채널 아티팩트였음, budget-6에서 반증)
+- budget-6 BPD 코드 수치를 타임아웃 3건 없이 인용 (하한으로 표기)
 
 ---
 
@@ -156,6 +159,20 @@ Four arms, **same poison on replica 0 only**, core 20 QnA + 20 code, `agent`, `m
 | dag-bpd | 1.00 / 0 / 0.88 | 0.99 / 0.01 / **0.63** |
 
 **읽기 (RQ2 갱신):** (1) code attribution은 **judge**에서 오고, terminal backprop 가중은 추가 효과가 없다(BPD = judge-only, McNemar p=1.0). (2) QnA 격리·attribution은 3-replica 문자열 다수결로 충분하고 judge는 오히려 낮다(1.00 vs 0.88, p=5e-4). (3) 이득의 큰 부분은 3× 앙상블이며, "DAG 라벨"이나 "backprop"이 아니다. **한계:** 주입 채널(system vs user) 혼입으로 general-3 det=0은 구조적 한계로 읽으면 안 되고, single-loop QnA 전파는 문구에 민감(0.17→0.01)해 code를 주 증거로 삼아야 한다. 따라서 Abstract의 "judge and backward pass" 표현은 "independent judge"로 좁혀야 한다.
+
+### Phase 1d — Budget-6, 동일 채널(system prompt), n=100+100 (done, 2026-10-11) ★ 메인
+
+5 arms, `agent`, 병합본 `results/poison-budget-6-retried/` (원본 `poison-budget-6`; BPD 코드 타임아웃 11건 중 8건 재실행 통과, 3건 실패 유지), 상세 `POISON_RESULTS.md` §11, 표 `tab_main_compact.tex`, 검정 `paired_poison-budget-6-retried.csv`.
+
+| Arm | QnA acc/prop/det | Code acc/prop/det | Code Det\|Emit |
+|-----|------------------|-------------------|----------------|
+| general-1 | **0.00 / 1.00** / 0 | **0.54 / 0.41** / 0 | 0 |
+| general-3 maj. | 1.00 / 0 / **1.00** | 0.97 / 0.02 / 0.01 | 0.02 |
+| flat-3 maj. | 1.00 / 0 / 0.99 | 0.92 / 0.08 / 0.01 | 0.02 |
+| judge-only-3 | 1.00 / 0 / 0.85 | 0.99 / 0.01 / **0.64** | 0.90 |
+| dag-bpd | 1.00 / 0 / 0.87 | 0.96 / 0.01 / **0.63** | 0.90 |
+
+**읽기 (RQ1/RQ2 갱신):** (1) 같은 거짓이 system prompt에 있으면 단일 루프는 QnA에서 전부 거짓을 출력한다. 3-replica 격리는 강하다. (2) **budget-5의 general-3 det=0은 채널 때문이었다.** 독이 보이면 general-3 QnA det=1.00. (3) QnA attribution은 단순 다수결 > judge (p<0.001). (4) code attribution은 judge에서 오며 BPD = judge-only(p=1.0). (5) Abstract의 Yonsei-vs-single-loop 비교는 철회했다(채널 의존).
 
 ### Phase 3 — 외부타당성 (main급·나중)
 | 항목 | 목적 |

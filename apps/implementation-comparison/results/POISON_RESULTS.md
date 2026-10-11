@@ -399,6 +399,44 @@ PYTHONPATH=src python -m pytest tests/test_poison.py tests/test_poison_code_task
 
 ---
 
+## 11. Budget-6 — 모든 arm에 동일 채널(system prompt) 주입 (2026-10-11, n=100+100) ★ 메인 결과
+
+**왜 했나:** §10의 채널 혼입(I1) 제거. general-1/general-3 독 replica도 flat/judge-only/BPD와 **바이트 동일한 문구를 system prompt**로 받는다(`injection_profile="system"`, `--arms budget-6`). 새 지표 `lie_emitted`(독 replica 자신의 출력에 거짓이 나왔는가)와 `detection_given_emitted`(Det|Emit)를 기록한다. 코드 과제의 Emit은 거짓 문구 또는 소스 파일 패턴 일치를 쓰는 **어휘 기반 근사**라 의역된 순응은 놓칠 수 있다.
+
+**실행:** `compare_poison(Path('results/poison-budget-6'), condition='agent', task_set='all', scale='all', arms='budget-6', max_turns=20)`, 2026-10-11 13:26–17:16 KST, 1,000 runs, 원본 `results/poison-budget-6/` (score.json만 git).
+
+**⚠ 하니스 타임아웃과 재실행 (반드시 명시):** 첫 패스에서 **dag-bpd 코드 11건이 60초 task 제한에 걸려**(`status=timeout`, 토큰 0 기록, 16:26–16:41 KST에 약 1–2분 간격으로 발생) `accurate=False`로 처리됐다. 다른 arm에는 타임아웃이 0건, budget-5에도 0건. `code/06_retry_infra_timeouts.py poison-budget-6`이 **정확히 이 11건만 동일 설정으로 1회 재실행**(`results/poison-budget-6-retry/`)하고 병합본 `results/poison-budget-6-retried/`를 만든다. 재실행에서 8건 통과, **3건(strip-once, parity-000, default-000)은 다시 타임아웃 → 실패로 유지**(통과할 때까지 반복하지 않음: 선택 편향 방지). 원본(as-run)은 그대로 보존하고 두 버전을 모두 보고한다. 논문 메인 = `poison-budget-6-retried`(매크로 `Main`/`BSixR`), 원본 = `BSix`(부록 표). BPD 코드 정확도는 하한으로 읽는다.
+
+**결과 (retried 병합본, n=100 per cell, agent, 1회 실행)** — 표: `tab_main_compact.tex`, `tab_budget6_retried.tex`, 부록 `tab_budget6.tex`
+
+| arm | QnA acc/prop/det(=rec) | Emit | Det\|Emit | Code acc/prop/det(=rec) | Emit | Det\|Emit |
+|-----|------------------------|------|-----------|-------------------------|------|-----------|
+| general-1 | **0.00 / 1.00** / 0 | 1.00 | 0 | **0.54 / 0.41** / 0 | 0.50 | 0 |
+| general-3 maj. | 1.00 / 0 / **1.00** | 1.00 | 1.00 | 0.97 / 0.02 / 0.01 | 0.49 | 0.02 |
+| flat-3 maj. | 1.00 / 0 / 0.99 | 0.99 | 1.00 | 0.92 / 0.08 / 0.01 | 0.56 | 0.02 |
+| judge-only-3 | 1.00 / 0 / 0.85 | 0.99 | 0.86 | 0.99 / 0.01 / **0.64** | 0.58 | 0.90 |
+| dag-bpd | 1.00 / 0 / 0.87 | 0.98 | 0.89 | 0.96 / 0.01 / **0.63** | 0.61* | 0.90 |
+
+(*타임아웃 3건은 Emit 미기록이라 분모 97. 원본 as-run BPD 코드: acc 0.88, det/rec 0.61, 타임아웃 11.)
+
+**Paired exact McNemar (`paired_poison-budget-6-retried.csv`)**
+- 격리: general-1 vs general-3 정확도 — QnA 0.00 vs 1.00 (100 vs 0, p<1e-29), code 0.54 vs 0.97 (0 vs 43, p=2e-13).
+- QnA recovery: general-3 1.00 vs judge-only 0.85 (15 vs 0, p=6e-5); flat-3 0.99 vs BPD 0.87 (13 vs 1, p=0.002); **BPD vs judge-only 0.87 vs 0.85 (12 vs 10, p=0.83)**.
+- Code recovery: judge-only 0.64 vs flat-3 0.01 (63 vs 0, p=2e-19); **BPD vs judge-only 0.63 vs 0.64 (8 vs 9, p=1.0)**; BPD vs general-3/flat-3 p≈4e-19.
+
+**해석 (budget-5 대비 달라진 점 포함)**
+1. **채널이 단일 루프 취약성을 지배한다.** system prompt로 같은 거짓을 받으면 general-1은 QnA에서 **100% 거짓을 출력**(acc 0.00), code에서 41% 전파(acc 0.54). user 메시지로 받을 때(budget-5: 0.99/0.01, 0.84/0.11)는 거의 무시했다. §10의 "single-loop가 상대적으로 견고하다"는 인상은 **채널 아티팩트**였다.
+2. **budget-5의 general-3 det=0은 기계적 결과였다.** 독이 보이면(Emit=1.00) general-3 QnA det=**1.00**. 구조적 한계가 아니라 독이 출력에 안 나온 탓이었다(I1 확인).
+3. **3-replica 격리는 강하다.** QnA에서 모든 3-replica arm이 acc 1.00 / prop 0, code acc 0.92–0.99.
+4. **QnA attribution은 단순 다수결이 judge보다 낫다.** Det|Emit: general-3/flat-3 1.00 vs judge-only 0.86, BPD 0.89. judge는 거짓이 보이는 run의 일부를 놓친다.
+5. **code attribution은 judge에서 온다.** 다수결은 Det|Emit 0.02(문자열 매칭 한계), judge 계열 0.90. **BPD = judge-only**(backprop 추가 이득 없음)가 QnA·code 모두에서 재확인.
+6. **독 replica의 순응 자체가 지표.** code에서는 약 절반의 run에서만 거짓을 출력(Emit 0.49–0.61) → 어떤 방식이든 attribution 상한을 제한한다.
+7. **Hierarchical(Yonsei) vs 단일 루프 비교는 철회.** 이전의 "Yonsei QnA 전파 0.71 > single-loop 0.17"은 단일 루프가 user 메시지로 받던 설정의 결과다. system 채널에서는 단일 루프 전파가 1.00이므로 방향이 뒤집힌다. 논문에서는 Yonsei의 절대 전파율(0.71, exploratory)만 쓰고 단일 루프와 비교하지 않는다.
+
+**남은 한계:** 단일 모델·attempts=1, 독 replica 위치 고정(항상 0), 코드 다수결은 substring 매칭, 60초 제한이 3단계 judge 파이프라인에 불리(BPD 코드 3건 실패 유지), Emit은 코드에서 어휘 근사.
+
+---
+
 ## 8. Paperization artifacts (2026-09-09)
 
 Replication pipeline (no API):
