@@ -182,7 +182,12 @@ def export_condition_ablation(rows: List[Dict[str, str]]) -> Optional[str]:
     )
 
 
-MAIN_RUN_CANDIDATES = ("poison-budget-6-retried", "poison-budget-6", "poison-budget-5")
+MAIN_RUN_CANDIDATES = (
+    "poison-budget-7",
+    "poison-budget-6-retried",
+    "poison-budget-6",
+    "poison-budget-5",
+)
 BUDGET_ARMS = (
     ("general-agent-system", "general-1"),
     ("general-majority-3", "general-3 maj."),
@@ -267,6 +272,168 @@ def export_compact(rows: List[Dict[str, str]], run_id: str, caption: str, label:
     return "\n".join(lines)
 
 
+def export_position(
+    rows: List[Dict[str, str]], run_id: str, caption: str, label: str
+) -> Optional[str]:
+    """Recovery and detection by which replica carried the lie, with permutation p."""
+    run_rows = [r for r in rows if r["run_id"] == run_id]
+    if not run_rows:
+        return None
+    headers = ["Arm", "Set"] + ["Acc@{}".format(k) for k in (0, 1, 2)] + ["$p_{\\mathrm{Acc}}$"]
+    headers += ["Rec@{}".format(k) for k in (0, 1, 2)] + ["$p_{\\mathrm{Rec}}$"]
+    body: List[List[str]] = []
+    for system, name in BUDGET_ARMS:
+        for task_set, short in (("micro_qna", "QnA"), ("code", "Code")):
+            cells_for = {
+                int(float(r["position"])): r
+                for r in run_rows
+                if r["system"] == system and r["task_set"] == task_set
+            }
+            if not cells_for:
+                continue
+            cells = [name, short]
+            for column in ("accurate", "recovered"):
+                for k in (0, 1, 2):
+                    row = cells_for.get(k)
+                    cells.append("{:.2f}".format(float(row[column])) if row else "--")
+                any_row = next(iter(cells_for.values()))
+                p_value = float(any_row["perm_p_{}".format(column)])
+                cells.append("$<$0.001" if p_value < 0.001 else "{:.3f}".format(p_value))
+            body.append(cells)
+    if not body:
+        return None
+    return tabular(headers, body, caption, label)
+
+
+def export_semantic(
+    rows: List[Dict[str, str]], run_id: str, caption: str, label: str
+) -> Optional[str]:
+    """Judge-free attribution on code replicas versus each arm's own detection."""
+    run_rows = {r["system"]: r for r in rows if r["run_id"] == run_id}
+    if not run_rows:
+        return None
+    headers = ["Arm", "$n$", "AST outlier", "AST wrong", "Test oracle", "Arm detection"]
+    body: List[List[str]] = []
+    for system, name in BUDGET_ARMS:
+        row = run_rows.get(system)
+        if row is None:
+            continue
+        cells = [name, str(int(float(row["n"])))]
+        for column in ("ast_hit", "ast_wrong", "oracle_hit", "method_hit"):
+            raw = row.get(column, "")
+            cells.append("{:.2f}".format(float(raw)) if raw not in ("", None) else "--")
+        body.append(cells)
+    if not body:
+        return None
+    return tabular(headers, body, caption, label)
+
+
+def export_fallback(
+    rows_a: List[Dict[str, str]], rows_b: List[Dict[str, str]], caption: str, label: str
+) -> Optional[str]:
+    """Which replica each three-replica arm promotes on code tasks, for two models."""
+    if not rows_a and not rows_b:
+        return None
+    headers = ["Arm"]
+    for tag in ("A", "B"):
+        headers += ["Last " + tag, "Poisoned " + tag, "Acc. poisoned " + tag, "Acc. other " + tag]
+    body: List[List[str]] = []
+    for system, name in BUDGET_ARMS:
+        found = False
+        cells = [name]
+        for rows in (rows_a, rows_b):
+            row = next((r for r in rows if r["system"] == system), None)
+            if row is None:
+                cells += ["--"] * 4
+                continue
+            found = True
+            cells += [
+                "{:.2f}".format(float(row["final_last"])),
+                "{:.2f}".format(float(row["final_poisoned_only"])),
+                "{:.2f}".format(float(row["acc_poisoned_only"])),
+                "{:.2f}".format(float(row["acc_other"])),
+            ]
+        if found:
+            body.append(cells)
+    if not body:
+        return None
+    return tabular(headers, body, caption, label)
+
+
+def export_emit_behavior(
+    rows_a: List[Dict[str, str]], rows_b: List[Dict[str, str]], caption: str, label: str
+) -> Optional[str]:
+    """Poisoned QnA replica: no tool, tool then gold, no tool and the lie. Two models."""
+    if not rows_a and not rows_b:
+        return None
+    headers = ["Arm"]
+    for tag in ("A", "B"):
+        headers += ["No tool " + tag, "No tool+lie " + tag, "Tool+gold " + tag, "Tool+lie " + tag]
+    body: List[List[str]] = []
+    for system, name in BUDGET_ARMS:
+        found = False
+        cells = [name]
+        for rows in (rows_a, rows_b):
+            row = next((r for r in rows if r["system"] == system), None)
+            if row is None:
+                cells += ["--"] * 4
+                continue
+            found = True
+            cells += [
+                "{:.2f}".format(float(row["no_tool"])),
+                "{:.2f}".format(float(row["no_tool_and_lie"])),
+                "{:.2f}".format(float(row["tool_and_gold"])),
+                "{:.2f}".format(float(row["tool_and_lie"])),
+            ]
+        if found:
+            body.append(cells)
+    if not body:
+        return None
+    return tabular(headers, body, caption, label)
+
+
+def export_replication(
+    rows: List[Dict[str, str]], run_a: str, run_b: str, caption: str, label: str
+) -> Optional[str]:
+    """Same arm, same task ids, two runs: rates, discordant counts, exact McNemar p."""
+    if not rows:
+        return None
+    headers = ["Arm", "Set"]
+    for name in ("Acc", "Rec"):
+        headers += ["{} A".format(name), "{} B".format(name), "{} a/b".format(name), "p"]
+    body: List[List[str]] = []
+    for system, name in BUDGET_ARMS:
+        for task_set, short in (("micro_qna", "QnA"), ("code", "Code")):
+            cells = [name, short]
+            found = False
+            for metric in ("accurate", "recovered"):
+                row = next(
+                    (
+                        r
+                        for r in rows
+                        if r["system"] == system
+                        and r["task_set"] == task_set
+                        and r["metric"] == metric
+                    ),
+                    None,
+                )
+                if row is None:
+                    cells += ["--"] * 4
+                    continue
+                found = True
+                cells += [
+                    "{:.2f}".format(float(row["rate_a"])),
+                    "{:.2f}".format(float(row["rate_b"])),
+                    "{}/{}".format(int(float(row["a_only"])), int(float(row["b_only"]))),
+                    "{:.2f}".format(float(row["p_value"])),
+                ]
+            if found:
+                body.append(cells)
+    if not body:
+        return None
+    return tabular(headers, body, caption, label)
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     rows = load_rows()
@@ -316,6 +483,126 @@ def main() -> None:
     )
     if budget6r:
         mapping["tab_budget6_retried.tex"] = budget6r
+    def read_csv(name: str) -> List[Dict[str, str]]:
+        path = ROOT / "data" / "processed" / name
+        if not path.exists():
+            return []
+        with path.open(encoding="utf-8", newline="") as handle:
+            return list(csv.DictReader(handle))
+
+    budget7 = export_budget(
+        rows,
+        "poison-budget-7",
+        "Position-balanced run: the poisoned replica is replica 0, 1, or 2 in equal "
+        "shares, with the identical system-prompt claim and a 180\\,s task limit "
+        "(\\texttt{gpt-5.6-luna}, $n{=}100$ per cell, agent condition). Rates with "
+        "bootstrap 95\\% CI.",
+        "tab:budget7",
+    )
+    if budget7:
+        mapping["tab_budget7.tex"] = budget7
+    budget8 = export_budget(
+        rows,
+        "poison-budget-8",
+        "Second model: the configuration of Table~\\ref{tab:budget7} with "
+        "\\texttt{gpt-6-luna} ($n{=}100$ per cell, agent condition). Rates with bootstrap "
+        "95\\% CI.",
+        "tab:budget8",
+    )
+    if budget8:
+        mapping["tab_budget8.tex"] = budget8
+    compact8 = export_compact(
+        rows,
+        "poison-budget-8",
+        "Second model (\\texttt{gpt-6-luna}), same configuration as Table~\\ref{tab:main} "
+        "($n{=}100$ per cell, agent condition). Columns as in Table~\\ref{tab:main}.",
+        "tab:second",
+    )
+    if compact8:
+        mapping["tab_second_compact.tex"] = compact8
+    position_caption = (
+        "Accuracy and recovery by the index of the poisoned replica "
+        "(permutation test of dependence on the index; each cell holds about a third "
+        "of the tasks of a suite). The single loop ignores the index, so its row "
+        "shows the spread expected from task composition alone."
+    )
+    for run_id, name, label in (
+        ("poison-budget-7", "tab_position.tex", "tab:position"),
+        ("poison-budget-8", "tab_position_b8.tex", "tab:position-b8"),
+    ):
+        position = export_position(
+            read_csv("position_{}.csv".format(run_id)),
+            run_id,
+            position_caption + (" Run \\texttt{" + run_id.replace("poison-", "") + "}."),
+            label,
+        )
+        if position:
+            mapping[name] = position
+    for run_id, name, label, model in (
+        ("poison-budget-6-retried", "tab_semantic_b6r.tex", "tab:semantic-b6r", "main run of the earlier, replica-0-only design"),
+        ("poison-budget-7", "tab_semantic.tex", "tab:semantic", "\\texttt{gpt-5.6-luna}, position-balanced"),
+        ("poison-budget-8", "tab_semantic_b8.tex", "tab:semantic-b8", "second model \\texttt{gpt-6-luna}"),
+    ):
+        semantic = export_semantic(
+            read_csv("semantic_baselines_{}.csv".format(run_id)),
+            run_id,
+            "Judge-free attribution on code replicas ({}; no LLM call). AST outlier: "
+            "the one replica whose normalized source differs from two identical ones; "
+            "wrong: it flags a replica other than the poisoned one; test oracle: the one "
+            "replica that fails hidden tests (an upper bound the arms cannot use). "
+            "Arm detection is the arm's own detection rate on the same tasks.".format(model),
+            label,
+        )
+        if semantic:
+            mapping[name] = semantic
+    for run_a, run_b, name, label, caption in (
+        (
+            "poison-budget-7",
+            "poison-budget-6-retried",
+            "tab_replication.tex",
+            "tab:replication",
+            "Same arm and task ids in the position-balanced run (A) and the earlier run in "
+            "which replica~0 always carried the lie (B). a/b: tasks correct only in A / only "
+            "in B; $p$: exact McNemar. The runs differ in poisoned-replica index and task "
+            "limit, so differences mix both with sampling noise.",
+        ),
+        (
+            "poison-budget-8",
+            "poison-budget-7",
+            "tab_replication_b8.tex",
+            "tab:replication-b8",
+            "Same arm and task ids with the second model (A, \\texttt{gpt-6-luna}) and the "
+            "first model (B, \\texttt{gpt-5.6-luna}), both position-balanced. a/b: tasks "
+            "correct only in A / only in B; $p$: exact McNemar.",
+        ),
+    ):
+        replication = export_replication(
+            read_csv("replication_{}_vs_{}.csv".format(run_a, run_b)), run_a, run_b, caption, label
+        )
+        if replication:
+            mapping[name] = replication
+    fallback = export_fallback(
+        read_csv("fallback_poison-budget-7.csv"),
+        read_csv("fallback_poison-budget-8.csv"),
+        "Which replica's source the arm promotes on code tasks (position-balanced runs, $n{=}100$). "
+        "Last: final source equals replica~2's; Poisoned: final source equals only the poisoned "
+        "replica's; Acc.\\ is accuracy among those runs, and Acc.\\ other among all remaining runs. "
+        "A: \\texttt{gpt-5.6-luna}; B: \\texttt{gpt-6-luna}.",
+        "tab:fallback",
+    )
+    if fallback:
+        mapping["tab_fallback.tex"] = fallback
+    emit = export_emit_behavior(
+        read_csv("qna_emit_behavior_poison-budget-7.csv"),
+        read_csv("qna_emit_behavior_poison-budget-8.csv"),
+        "Poisoned replica on QnA tasks ($n{=}100$). No tool: it answered without a tool call; "
+        "No tool+lie: and the answer was the planted lie; Tool+gold: it called a tool and answered "
+        "with the source value; Tool+lie: it called a tool and still answered with the lie. "
+        "A: \\texttt{gpt-5.6-luna}; B: \\texttt{gpt-6-luna}.",
+        "tab:emit",
+    )
+    if emit:
+        mapping["tab_emit.tex"] = emit
     present_runs = {r["run_id"] for r in rows}
     main_run = next((r for r in MAIN_RUN_CANDIDATES if r in present_runs), None)
     if main_run:

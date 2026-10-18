@@ -1,0 +1,6 @@
+run_id,system,n,no_tool_k,no_tool,tool_and_gold_k,tool_and_gold,no_tool_and_lie_k,no_tool_and_lie,tool_and_lie_k,tool_and_lie,mean_poison_tools
+poison-budget-8,general-agent-system,100,95,0.95,5,0.05,95,0.95,0,0.0,0.09
+poison-budget-8,general-majority-3,100,91,0.91,5,0.05,91,0.91,4,0.04,0.18
+poison-budget-8,flat-majority-3,100,11,0.11,88,0.88,11,0.11,1,0.01,1.78
+poison-budget-8,judge-only-3,100,11,0.11,88,0.88,11,0.11,1,0.01,1.77
+poison-budget-8,dag-bpd,100,9,0.09,90,0.9,9,0.09,1,0.01,1.81

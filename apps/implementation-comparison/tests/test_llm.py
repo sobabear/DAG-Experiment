@@ -547,3 +547,53 @@ def test_openai_adapter_gpt56_luna_keeps_explicit_reasoning_effort():
     )
 
     assert client.chat.completions.kwargs["reasoning_effort"] == "low"
+
+
+def test_openai_adapter_gpt6_luna_uses_the_same_chat_compat_as_gpt56():
+    client = _spy_openai_client()
+    adapter = OpenAICompatibleLLM(
+        ModelConfig(provider="openai-compatible", model="gpt-6-luna"),
+        client=client,
+    )
+    adapter.complete(
+        LLMRequest(
+            messages=[{"role": "user", "content": "edit"}],
+            model=ModelConfig(
+                provider="openai-compatible",
+                model="gpt-6-luna",
+                temperature=0.0,
+                max_tokens=64,
+            ),
+            tools=[{"type": "function", "function": {"name": "read"}}],
+        )
+    )
+
+    kwargs = client.chat.completions.kwargs
+    assert "temperature" not in kwargs
+    assert "max_tokens" not in kwargs
+    assert kwargs["max_completion_tokens"] == 64
+    assert kwargs["reasoning_effort"] == "none"
+
+
+def test_openai_adapter_other_models_are_left_untouched():
+    client = _spy_openai_client()
+    adapter = OpenAICompatibleLLM(
+        ModelConfig(provider="openai-compatible", model="gpt-4.1-nano"),
+        client=client,
+    )
+    adapter.complete(
+        LLMRequest(
+            messages=[{"role": "user", "content": "hi"}],
+            model=ModelConfig(
+                provider="openai-compatible",
+                model="gpt-4.1-nano",
+                temperature=0.0,
+                max_tokens=64,
+            ),
+        )
+    )
+
+    kwargs = client.chat.completions.kwargs
+    assert kwargs["temperature"] == 0.0
+    assert kwargs["max_tokens"] == 64
+    assert "reasoning_effort" not in kwargs

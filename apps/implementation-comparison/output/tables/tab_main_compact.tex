@@ -2,7 +2,7 @@
 \begin{table*}[t]
 \centering
 \footnotesize
-\caption{Compute-matched arms under the same injected claim ($n{=}100$ per cell, agent condition; run \texttt{budget-6-retried}). Acc.: gold answer; Prop.: lie in final output; Det.: poisoned source named; Rec.: Det.\ and Acc.; Emit: poisoned replica output the lie; Det$\mid$E: Det.\ among Emit runs.}
+\caption{Compute-matched arms under the same injected claim ($n{=}100$ per cell, agent condition; run \texttt{budget-7}). Acc.: gold answer; Prop.: lie in final output; Det.: poisoned source named; Rec.: Det.\ and Acc.; Emit: poisoned replica output the lie; Det$\mid$E: Det.\ among Emit runs.}
 \label{tab:main}
 \begin{tabular}{lcccccccccccc}
 \toprule
@@ -10,11 +10,11 @@
 \cmidrule(lr){2-7}\cmidrule(lr){8-13}
 Arm & Acc & Prop & Det & Rec & Emit & Det$\mid$E & Acc & Prop & Det & Rec & Emit & Det$\mid$E \\
 \midrule
-general-1 & 0.00 & 1.00 & 0.00 & 0.00 & 1.00 & 0.00 & 0.54 & 0.41 & 0.00 & 0.00 & 0.50 & 0.00 \\
-general-3 maj. & 1.00 & 0.00 & 1.00 & 1.00 & 1.00 & 1.00 & 0.97 & 0.02 & 0.01 & 0.01 & 0.49 & 0.02 \\
-flat-3 maj. & 1.00 & 0.00 & 0.99 & 0.99 & 0.99 & 1.00 & 0.92 & 0.08 & 0.01 & 0.01 & 0.56 & 0.02 \\
-judge-only-3 & 1.00 & 0.00 & 0.85 & 0.85 & 0.99 & 0.86 & 0.99 & 0.01 & 0.64 & 0.64 & 0.58 & 0.90 \\
-dag-bpd & 1.00 & 0.00 & 0.87 & 0.87 & 0.98 & 0.89 & 0.96 & 0.01 & 0.63 & 0.63 & 0.61 & 0.90 \\
+general-1 & 0.00 & 1.00 & 0.00 & 0.00 & 1.00 & 0.00 & 0.59 & 0.40 & 0.00 & 0.00 & 0.47 & 0.00 \\
+general-3 maj. & 1.00 & 0.00 & 1.00 & 1.00 & 1.00 & 1.00 & 0.81 & 0.15 & 0.02 & 0.02 & 0.48 & 0.04 \\
+flat-3 maj. & 1.00 & 0.00 & 0.99 & 0.99 & 0.99 & 1.00 & 0.72 & 0.26 & 0.01 & 0.01 & 0.59 & 0.02 \\
+judge-only-3 & 1.00 & 0.00 & 0.91 & 0.91 & 0.98 & 0.93 & 1.00 & 0.00 & 0.63 & 0.63 & 0.61 & 0.87 \\
+dag-bpd & 1.00 & 0.00 & 0.94 & 0.94 & 1.00 & 0.94 & 0.99 & 0.01 & 0.67 & 0.67 & 0.61 & 0.84 \\
 \bottomrule
 \end{tabular}
 \end{table*}

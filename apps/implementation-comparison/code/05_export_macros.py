@@ -26,7 +26,29 @@ RUN_TAGS = {
     "poison-budget-5": "BFive",
     "poison-budget-6": "BSix",
     "poison-budget-6-retried": "BSixR",
+    "poison-budget-7": "BSeven",
+    "poison-budget-8": "BEight",
 }
+POSITION_WORDS = {0: "Zero", 1: "One", 2: "Two"}
+BEHAVIOR_METRICS = (
+    ("no_tool", "NoTool"),
+    ("tool_and_gold", "ToolGold"),
+    ("no_tool_and_lie", "NoToolLie"),
+    ("tool_and_lie", "ToolLie"),
+)
+FALLBACK_METRICS = (
+    ("final_last", "Last"),
+    ("final_poisoned_only", "PoisonedOnly"),
+    ("acc_poisoned_only", "AccPoisonedOnly"),
+    ("acc_other", "AccOther"),
+)
+SEMANTIC_METRICS = (
+    ("ast_hit", "Ast"),
+    ("ast_wrong", "AstWrong"),
+    ("oracle_hit", "Oracle"),
+    ("method_hit", "Method"),
+    ("poisoned_fails", "PoisonedFails"),
+)
 ARM_TAGS = {
     "general-agent-system": "GenOne",
     "general-majority-3": "GenThree",
@@ -45,7 +67,12 @@ METRIC_TAGS = {
     "detection_given_emitted": "DetEmit",
 }
 ARM_ORDER = list(ARM_TAGS)
-MAIN_CANDIDATES = ("poison-budget-6-retried", "poison-budget-6", "poison-budget-5")
+MAIN_CANDIDATES = (
+    "poison-budget-7",
+    "poison-budget-6-retried",
+    "poison-budget-6",
+    "poison-budget-5",
+)
 
 
 def rate_macro(run_tag: str, arm: str, task_set: str, metric: str) -> str:
@@ -87,7 +114,12 @@ def _emit(lines: List[str], name: str, value: str) -> None:
 
 
 def build_macros(
-    rate_rows: Iterable[Dict[str, str]], paired: Dict[str, List[Dict[str, str]]]
+    rate_rows: Iterable[Dict[str, str]],
+    paired: Dict[str, List[Dict[str, str]]],
+    position: Optional[Dict[str, List[Dict[str, str]]]] = None,
+    semantic: Optional[Dict[str, List[Dict[str, str]]]] = None,
+    fallback: Optional[Dict[str, List[Dict[str, str]]]] = None,
+    emit: Optional[Dict[str, List[Dict[str, str]]]] = None,
 ) -> str:
     rows = [r for r in rate_rows if r.get("condition", "all") == "all"]
     present = {r["run_id"] for r in rows}
@@ -150,6 +182,87 @@ def build_macros(
                     pval_macro(tag, r["task_set"], metric, r["arm_a"], r["arm_b"]),
                     fmt_p(float(r["p_value"])),
                 )
+    pval_done: Set[str] = set()
+    for run, prows in (position or {}).items():
+        if run not in RUN_TAGS:
+            continue
+        tag = RUN_TAGS[run]
+        for r in prows:
+            arm, task_set = r["system"], r["task_set"]
+            if arm not in ARM_TAGS or task_set not in SET_TAGS:
+                continue
+            word = POSITION_WORDS[int(float(r["position"]))]
+            for column, metric in (("accurate", "accurate"), ("propagated", "propagated"),
+                                   ("detection_hit", "detection_hit"), ("recovered", "recovered")):
+                if r.get(column, "") in ("", None):
+                    continue
+                base = "{}{}{}{}".format(tag, ARM_TAGS[arm], SET_TAGS[task_set], METRIC_TAGS[metric])
+                _emit(lines, "RatePos" + base + word, fmt_rate(r[column]))
+                pval = r.get("perm_p_{}".format(column), "")
+                if pval not in ("", None) and base not in pval_done:
+                    pval_done.add(base)
+                    _emit(lines, "PvalPos" + base, fmt_p(float(pval)))
+    for run, srows in (semantic or {}).items():
+        if run not in RUN_TAGS:
+            continue
+        tags = [RUN_TAGS[run]] + (["Main"] if run == main else [])
+        for r in srows:
+            arm = r["system"]
+            if arm not in ARM_TAGS:
+                continue
+            for column, suffix in SEMANTIC_METRICS:
+                if r.get(column, "") in ("", None):
+                    continue
+                for tag in tags:
+                    _emit(
+                        lines,
+                        "RateSem{}{}Code{}".format(tag, ARM_TAGS[arm], suffix),
+                        fmt_rate(r[column]),
+                    )
+            for tag in tags:
+                _emit(lines, "CountSem{}{}CodeN".format(tag, ARM_TAGS[arm]), str(int(float(r["n"]))))
+                if r.get("p_method_vs_ast", "") not in ("", None):
+                    _emit(
+                        lines,
+                        "PvalSem{}{}CodeMethodVsAst".format(tag, ARM_TAGS[arm]),
+                        fmt_p(float(r["p_method_vs_ast"])),
+                    )
+    for run, frows in (fallback or {}).items():
+        if run not in RUN_TAGS:
+            continue
+        tags = [RUN_TAGS[run]] + (["Main"] if run == main else [])
+        for r in frows:
+            arm = r["system"]
+            if arm not in ARM_TAGS:
+                continue
+            for column, suffix in FALLBACK_METRICS:
+                if r.get(column, "") in ("", None):
+                    continue
+                for tag in tags:
+                    _emit(lines, "RateFb{}{}Code{}".format(tag, ARM_TAGS[arm], suffix), fmt_rate(r[column]))
+            if r.get("final_poisoned_only_k", "") not in ("", None):
+                for tag in tags:
+                    _emit(
+                        lines,
+                        "CountFb{}{}CodePoisonedOnly".format(tag, ARM_TAGS[arm]),
+                        str(int(float(r["final_poisoned_only_k"]))),
+                    )
+    for run, erows in (emit or {}).items():
+        if run not in RUN_TAGS:
+            continue
+        tag = RUN_TAGS[run]
+        for r in erows:
+            arm = r["system"]
+            if arm not in ARM_TAGS:
+                continue
+            for column, suffix in BEHAVIOR_METRICS:
+                if r.get(column, "") in ("", None):
+                    continue
+                _emit(
+                    lines,
+                    "RateBeh{}{}Qna{}".format(tag, ARM_TAGS[arm], suffix),
+                    fmt_rate(r[column]),
+                )
     if main:
         _emit(lines, "MainRunName", main.replace("poison-", ""))
     return "\n".join(lines) + "\n"
@@ -163,8 +276,28 @@ def main() -> None:
         run_id = path.stem[len("paired_"):]
         with path.open(encoding="utf-8", newline="") as handle:
             paired[run_id] = list(csv.DictReader(handle))
+    position: Dict[str, List[Dict[str, str]]] = {}
+    for path in sorted(PROCESSED.glob("position_*.csv")):
+        run_id = path.stem[len("position_"):]
+        with path.open(encoding="utf-8", newline="") as handle:
+            position[run_id] = list(csv.DictReader(handle))
+    semantic: Dict[str, List[Dict[str, str]]] = {}
+    for path in sorted(PROCESSED.glob("semantic_baselines_*.csv")):
+        run_id = path.stem[len("semantic_baselines_"):]
+        with path.open(encoding="utf-8", newline="") as handle:
+            semantic[run_id] = list(csv.DictReader(handle))
+    fallback: Dict[str, List[Dict[str, str]]] = {}
+    for path in sorted(PROCESSED.glob("fallback_*.csv")):
+        run_id = path.stem[len("fallback_"):]
+        with path.open(encoding="utf-8", newline="") as handle:
+            fallback[run_id] = list(csv.DictReader(handle))
+    emit: Dict[str, List[Dict[str, str]]] = {}
+    for path in sorted(PROCESSED.glob("qna_emit_behavior_*.csv")):
+        run_id = path.stem[len("qna_emit_behavior_"):]
+        with path.open(encoding="utf-8", newline="") as handle:
+            emit[run_id] = list(csv.DictReader(handle))
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(build_macros(rate_rows, paired), encoding="utf-8")
+    OUT.write_text(build_macros(rate_rows, paired, position, semantic, fallback, emit), encoding="utf-8")
     print("wrote", OUT)
 
 

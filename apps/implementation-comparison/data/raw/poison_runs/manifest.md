@@ -12,3 +12,5 @@
 | poison-budget-5 | `results/poison-budget-5/score.json` | `results/poison-budget-5/comparison.md` | frozen LLM artifacts |
 | poison-budget-6 | `results/poison-budget-6/score.json` | `results/poison-budget-6/comparison.md` | frozen LLM artifacts |
 | poison-budget-6-retried | `results/poison-budget-6-retried/score.json` | `results/poison-budget-6-retried/comparison.md` | frozen LLM artifacts |
+| poison-budget-7 | `results/poison-budget-7/score.json` | `results/poison-budget-7/comparison.md` | frozen LLM artifacts |
+| poison-budget-8 | `results/poison-budget-8/score.json` | `results/poison-budget-8/comparison.md` | frozen LLM artifacts |

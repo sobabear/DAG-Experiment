@@ -1,0 +1,5 @@
+run_id,system,n,final_last_k,final_last,final_poisoned_only_k,final_poisoned_only,acc_poisoned_only_k,acc_poisoned_only,acc_other_k,n_other,acc_other
+poison-budget-7,general-majority-3,100,91,0.91,34,0.34,16,0.47058823529411764,65,66,0.9848484848484849
+poison-budget-7,flat-majority-3,100,90,0.9,40,0.4,12,0.3,60,60,1.0
+poison-budget-7,judge-only-3,100,48,0.48,7,0.07,7,1.0,93,93,1.0
+poison-budget-7,dag-bpd,100,43,0.43,11,0.11,10,0.9090909090909091,89,89,1.0

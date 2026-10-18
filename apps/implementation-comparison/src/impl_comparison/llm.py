@@ -322,11 +322,11 @@ class OpenAICompatibleLLM:
 
 def _uses_gpt56_chat_compat(model: str) -> bool:
     name = str(model or "").strip().lower()
-    return name.startswith("gpt-5.6")
+    return name.startswith(("gpt-5.6", "gpt-6"))
 
 
 def _apply_gpt56_chat_completions_compat(kwargs):
-    """gpt-5.6 chat.completions rejects temperature=0, max_tokens, and tools+reasoning."""
+    """gpt-5.6 / gpt-6 chat.completions reject temperature=0, max_tokens, and tools+reasoning."""
     if not _uses_gpt56_chat_compat(str(kwargs.get("model") or "")):
         return
     temperature = kwargs.get("temperature")

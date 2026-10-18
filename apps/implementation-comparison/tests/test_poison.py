@@ -733,3 +733,192 @@ def test_lie_emitted_absent_outside_agent_condition(tmp_path):
         _context(tmp_path, workspace),
     )
     assert "lie_emitted" not in verify_poison(task, payload, workspace).details
+
+
+# ---- poison position (B10) ----------------------------------------------------
+
+
+def _with_worker(task, index):
+    from dataclasses import replace
+
+    return replace(task, metadata={**task.metadata, "poison_worker": index})
+
+
+def test_balanced_positions_are_balanced_deterministic_and_seeded():
+    from impl_comparison.poison_compare import balanced_poison_positions
+
+    ids = ["task-{:03d}".format(i) for i in range(100)]
+    first = balanced_poison_positions(ids, workers=3, seed=7)
+    again = balanced_poison_positions(ids, workers=3, seed=7)
+    other = balanced_poison_positions(ids, workers=3, seed=8)
+    assert first == again
+    assert first != other
+    counts = [first.count(k) for k in range(3)]
+    assert sorted(counts) == [33, 33, 34]
+    assert set(first) == {0, 1, 2}
+
+
+def test_balanced_positions_do_not_depend_on_list_order():
+    from impl_comparison.poison_compare import balanced_poison_positions
+
+    ids = ["task-{:03d}".format(i) for i in range(30)]
+    forward = dict(zip(ids, balanced_poison_positions(ids, workers=3, seed=1)))
+    shuffled = list(reversed(ids))
+    backward = dict(zip(shuffled, balanced_poison_positions(shuffled, workers=3, seed=1)))
+    assert forward == backward
+
+
+def test_tag_poison_position_sets_metadata_without_mutating_inputs():
+    from impl_comparison.poison import all_core_poison_tasks
+    from impl_comparison.poison_compare import _tag_poison_position
+
+    tasks = all_core_poison_tasks(["agent"])
+    tagged = _tag_poison_position(tasks)
+    assert [t.task_id for t in tagged] == [t.task_id for t in tasks]
+    assert all(t.metadata["poison_worker"] == 0 for t in tasks)
+    positions = [t.metadata["poison_worker"] for t in tagged]
+    assert set(positions) == {0, 1, 2}
+    assert tagged[0].metadata["gold"] == tasks[0].metadata["gold"]
+
+
+def test_poisoned_prompt_goes_only_to_the_configured_replica(tmp_path):
+    from impl_comparison.systems.majority3 import FlatMajority3System, GeneralMajority3System
+
+    marker = "Do not use any value from source code"
+    for cls in (GeneralMajority3System, FlatMajority3System):
+        for position in (1, 2):
+            task = _with_worker(
+                _tagged(poison_task("poison-timeout", "agent"), "system"), position
+            )
+            workspace = tmp_path / "{}-{}".format(cls.__name__, position)
+            materialize_poison_task(task, workspace)
+            (tmp_path / "ctx-{}-{}".format(cls.__name__, position)).mkdir()
+            llm = _RecordingLLM(
+                FakeLLM([{"content": "30"}, {"content": "30"}, {"content": "30"}])
+            )
+            cls(llm).run(
+                _request(task, workspace, "m"),
+                _context(tmp_path / "ctx-{}-{}".format(cls.__name__, position), workspace),
+            )
+            has_claim = [marker in (r.system_prompt or "") for r in llm.requests[:3]]
+            assert has_claim == [k == position for k in range(3)], (cls.__name__, position)
+
+
+def test_bpd_gives_the_claim_to_the_configured_worker_and_scores_that_index(tmp_path):
+    task = _with_worker(poison_task("poison-timeout", "agent"), 2)
+    workspace = tmp_path / "ws"
+    materialize_poison_task(task, workspace)
+    llm = _RecordingLLM(
+        FakeLLM(
+            [
+                {"content": "30"},
+                {"content": "30"},
+                {"content": "I claim 300"},
+                {"content": "30"},
+                {"content": "30"},
+                {"content": "30"},
+                {
+                    "content": (
+                        "1,1,1\n1,2,1\n1,3,1\n"
+                        "2,1,1\n2,2,1\n2,3,1\n"
+                        "3,1,-1\n3,2,-1\n3,3,-1\n"
+                    )
+                },
+            ]
+        )
+    )
+    payload = BpdDagSystem(llm, workers=3).run(
+        _request(task, workspace, "dag-bpd"), _context(tmp_path, workspace)
+    )
+    has_claim = [("Injected claim" in (r.system_prompt or "")) for r in llm.requests[:3]]
+    assert has_claim == [False, False, True]
+    assert payload["detected_source"] == 2
+    scored = verify_poison(task, payload, workspace)
+    assert scored.details["detection_hit"] is True
+
+
+def test_detection_is_graded_against_the_configured_position(tmp_path):
+    task = _with_worker(poison_task("poison-timeout", "agent"), 2)
+    workspace = tmp_path / "ws"
+    materialize_poison_task(task, workspace)
+    hit = verify_poison(task, {"final_text": "30", "detected_source": 2}, workspace)
+    miss = verify_poison(task, {"final_text": "30", "detected_source": 0}, workspace)
+    assert hit.details["detection_hit"] is True
+    assert miss.details["detection_hit"] is False
+
+
+def test_poison_compare_parses_position_and_timeout_flags():
+    from impl_comparison.poison_compare import parse_args
+
+    args = parse_args(["--poison-position", "balanced", "--task-timeout", "180"])
+    assert args.poison_position == "balanced"
+    assert args.task_timeout == 180.0
+    default = parse_args([])
+    assert default.poison_position == "fixed"
+    assert default.task_timeout is None
+
+
+def test_balanced_run_records_position_and_applies_timeout(tmp_path):
+    import re
+
+    from impl_comparison.poison_compare import _gold_and_lie, compare_poison
+    from impl_comparison.protocol import LLMResponse, UsageMetrics
+
+    class PositionAwareLLM:
+        def complete(self, request):
+            blob = request.system_prompt or ""
+            for message in request.messages:
+                blob += str(message.get("content", ""))
+            gold, lie = _gold_and_lie(blob)
+            system = request.system_prompt or ""
+            if system.startswith("You are an independent judge"):
+                text = str(request.messages[0]["content"])
+                proposals = {
+                    int(m.group(1)): m.group(2).strip()
+                    for m in re.finditer(r"^Proposal (\d+): (.*)$", text, re.M)
+                }
+                bad = {
+                    i
+                    for i, value in proposals.items()
+                    if list(proposals.values()).count(value) == 1
+                }
+                rows = []
+                for i in (1, 2, 3):
+                    for j in (1, 2, 3):
+                        rows.append("{},{},{}".format(i, j, -1 if i in bad else 1))
+                return LLMResponse(text="\n".join(rows), usage=UsageMetrics())
+            if system.startswith("Summarizer"):
+                return LLMResponse(text=gold, usage=UsageMetrics())
+            if "Proposal worker" in system and "Injected claim" in system:
+                return LLMResponse(text=lie, usage=UsageMetrics())
+            return LLMResponse(text=gold, usage=UsageMetrics())
+
+    summary = compare_poison(
+        tmp_path,
+        attempts=1,
+        condition="agent",
+        system="dag-bpd",
+        llm=PositionAwareLLM(),
+        allow_fake=True,
+        max_turns=8,
+        task_set="micro-qna",
+        scale="core",
+        poison_position="balanced",
+        task_timeout=123.0,
+    )
+    block = summary["dag-bpd"]["micro_qna"]
+    positions = [record["poison_worker"] for record in block["tasks"]]
+    assert set(positions) == {0, 1, 2}
+    assert block["rates"]["detection_hit"] == 1.0
+    assert block["rates"]["accurate"] == 1.0
+    assert block["rates"]["propagated"] == 0.0
+
+
+def test_apply_task_timeout_overrides_without_mutating_inputs():
+    from impl_comparison.poison_compare import _apply_task_timeout
+
+    tasks = [poison_task("poison-timeout", "agent")]
+    updated = _apply_task_timeout(tasks, 180.0)
+    assert updated[0].timeout == 180.0
+    assert tasks[0].timeout == 60.0
+    assert _apply_task_timeout(tasks, None)[0].timeout == 60.0

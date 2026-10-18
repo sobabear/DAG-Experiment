@@ -59,6 +59,18 @@
       "path": "results/poison-budget-6-retried",
       "score_json": "results/poison-budget-6-retried/score.json",
       "comparison_md": "results/poison-budget-6-retried/comparison.md"
+    },
+    {
+      "run_id": "poison-budget-7",
+      "path": "results/poison-budget-7",
+      "score_json": "results/poison-budget-7/score.json",
+      "comparison_md": "results/poison-budget-7/comparison.md"
+    },
+    {
+      "run_id": "poison-budget-8",
+      "path": "results/poison-budget-8",
+      "score_json": "results/poison-budget-8/score.json",
+      "comparison_md": "results/poison-budget-8/comparison.md"
     }
   ]
 }

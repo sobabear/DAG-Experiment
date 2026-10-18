@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import zlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Type
 
@@ -62,6 +63,45 @@ BUDGET5_ARMS = (
     "judge-only-3",
     "dag-bpd",
 )
+
+
+POSITION_SEED = 20261011
+
+
+def balanced_poison_positions(task_ids, workers: int = 3, seed: int = POSITION_SEED):
+    """Assign each task a poisoned-replica index so every index is used equally often.
+
+    Tasks are ranked by a seeded CRC of their id and dealt round-robin over the
+    replica indices. The result is exactly balanced (counts differ by at most one),
+    reproducible across processes, and independent of the order of ``task_ids``.
+    """
+    ids = list(task_ids)
+    keyed = sorted(
+        range(len(ids)),
+        key=lambda i: (zlib.crc32("{}:{}".format(seed, ids[i]).encode("utf-8")), ids[i]),
+    )
+    positions = [0] * len(ids)
+    for rank, index in enumerate(keyed):
+        positions[index] = rank % workers
+    return positions
+
+
+def _tag_poison_position(tasks, workers: int = 3, seed: int = POSITION_SEED):
+    from dataclasses import replace
+
+    positions = balanced_poison_positions([t.task_id for t in tasks], workers, seed)
+    return [
+        replace(task, metadata={**task.metadata, "poison_worker": position})
+        for task, position in zip(tasks, positions)
+    ]
+
+
+def _apply_task_timeout(tasks, seconds):
+    from dataclasses import replace
+
+    if seconds is None:
+        return list(tasks)
+    return [replace(task, timeout=float(seconds)) for task in tasks]
 
 
 def _tag_aligned_profile(tasks, profile: str = "aligned"):
@@ -149,6 +189,22 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     parser.add_argument(
+        "--poison-position",
+        default="fixed",
+        choices=("fixed", "balanced"),
+        help=(
+            "fixed: the poisoned replica is always replica 0; balanced: replica "
+            "0/1/2 in equal shares, assigned per task by a seeded hash (identical "
+            "assignment for every arm)"
+        ),
+    )
+    parser.add_argument(
+        "--task-timeout",
+        type=float,
+        default=None,
+        help="override the per-task wall-clock limit in seconds (default: task's own 60 s)",
+    )
+    parser.add_argument(
         "--allow-fake",
         action="store_true",
         help="Permit the poison smoke LLM (tests and offline dry-runs only)",
@@ -168,6 +224,8 @@ def compare_poison(
     task_set: str = "all",
     scale: str = "all",
     arms: str = "default",
+    poison_position: str = "fixed",
+    task_timeout: Optional[float] = None,
 ) -> Dict[str, Dict[str, object]]:
     resolved_llm, resolved_model = _resolve_llm(llm, model, allow_fake)
     results_dir = Path(results_dir)
@@ -188,6 +246,13 @@ def compare_poison(
     elif arms == "budget-6":
         micro_tasks = _tag_aligned_profile(micro_tasks, "system")
         code_tasks = _tag_aligned_profile(code_tasks, "system")
+    if poison_position == "balanced":
+        micro_tasks = _tag_poison_position(micro_tasks)
+        code_tasks = _tag_poison_position(code_tasks)
+    elif poison_position != "fixed":
+        raise ValueError("unknown poison position mode: {}".format(poison_position))
+    micro_tasks = _apply_task_timeout(micro_tasks, task_timeout)
+    code_tasks = _apply_task_timeout(code_tasks, task_timeout)
     summary: Dict[str, Dict[str, object]] = {}
     for system_id, cls in selected.items():
         entry: Dict[str, object] = {}
@@ -297,6 +362,7 @@ def evaluate_poison_system(
                     "task_id": task.task_id,
                     "attempt": attempt_id,
                     "condition": task.metadata.get("condition"),
+                    "poison_worker": task.metadata.get("poison_worker"),
                     "passed": result.passed,
                     "details": details,
                     "status": result.status,
@@ -456,6 +522,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         task_set=args.task_set,
         scale=args.scale,
         arms=args.arms,
+        poison_position=args.poison_position,
+        task_timeout=args.task_timeout,
     )
     print("wrote", results_dir / "comparison.md")
 

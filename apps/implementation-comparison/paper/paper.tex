@@ -1,4 +1,4 @@
-% Draft v0.1 -- generated numbers come only from ../output/macros/results.tex and ../output/tables/.
+% Draft v0.2 -- generated numbers come only from ../output/macros/results.tex and ../output/tables/.
 % Build:  cd paper && latexmk -pdf paper.tex
 % Review version (anonymous). For the arXiv version replace [review] by nothing: \usepackage{acl}.
 \documentclass[11pt]{article}
@@ -30,14 +30,13 @@
 \begin{abstract}
 Coding agents increasingly run as graphs of cooperating nodes, and one node can hand a wrong claim to all the others.
 We study this internal-poison setting. A planted lie enters one node, and the system should keep its final result correct, name the node that lied, or do both.
-We build 100 configuration question-answering tasks and 100 bug-fixing tasks graded by hidden tests.
-We compare a single-loop agent with three-replica ensembles, a judge-based graph that backpropagates node contributions, and a hierarchical scan-implement-test graph.
-With the same claim in the poisoned node's system prompt, the single loop repeats the lie in \RateMainGenOneQnaProp{} of question-answering runs and \RateMainGenOneCodeProp{} of bug-fixing runs, while every three-replica arm keeps bug-fixing accuracy between \RateMainFlatThreeCodeAcc{} and \RateMainJudgeOnlyCodeAcc{}.
+We compare a single-loop agent with three-replica ensembles, a judge-based graph with backpropagation of node contributions, and a hierarchical scan-implement-test graph on 100 configuration questions and 100 bug-fixing tasks graded by hidden tests, and we vary which replica carries the lie.
+With the same claim in the poisoned node's system prompt, the single loop repeats the lie in \RateMainGenOneQnaProp{} of question-answering runs and \RateMainGenOneCodeProp{} of bug-fixing runs.
+Three isolated replicas remove the damage on question answering, but on bug fixing a majority vote depends on which replica is poisoned: flat-3 accuracy is \RatePosBSevenFlatThreeCodeAccZero{} when replica~0 lies and \RatePosBSevenFlatThreeCodeAccTwo{} when replica~2 lies, because the vote falls back to the last replica.
 Naming the source is a separate property.
-On bug-fixing tasks a majority vote without a judge names it in \RateMainFlatThreeCodeDet{} of runs, a judge that compares replica outputs in \RateMainJudgeOnlyCodeDet{}, and the full backpropagation pipeline in \RateMainBpdCodeDet{}.
-Backpropagation adds no measurable benefit over the judge alone, and on question answering a plain majority vote names the source more often (\RateMainGenThreeQnaDet{}) than the judge does (\RateMainJudgeOnlyQnaDet{}).
-A hierarchical graph whose nodes trust a poisoned scan report repeats the lie in \RateHundredYonseiQnaProp{} of question-answering runs until we add an explicit source-over-scan rule (exploratory).
-Graph structure alone predicts neither isolation nor attribution. Redundancy and an independent comparison step do.
+On bug fixing it appears only when a comparison reads the replicas' code: a judge reaches recovery \RateMainJudgeOnlyCodeRec{}, and a judge-free comparison of normalized sources names the poisoned replica as often (\RateSemMainJudgeOnlyCodeAst{}); backpropagation adds no measurable benefit.
+A second model reproduces the bug-fixing results, but its question-answering attribution falls to \RateBEightJudgeOnlyQnaDet{} for the judge arm because the poisoned replica rarely repeats the lie (\RateBEightJudgeOnlyQnaEmit{}): a source can be named only when the lie is visible.
+Graph structure alone predicts neither isolation nor attribution.
 \end{abstract}
 
 \section{Introduction}
@@ -59,14 +58,15 @@ We ask two questions.
 \textbf{RQ2:} Inside graph-structured systems, which mechanism for handling the contaminated node drives the outcome: redundancy, a comparison step, or contribution backpropagation?
 
 The answers separate isolation from attribution.
-Three isolated replicas remove most of the damage of the lie, and replication explains most of that effect: three plain single-loop replicas reach code accuracy \RateMainGenThreeCodeAcc{}, against \RateMainGenOneCodeAcc{} for one loop, and QnA accuracy \RateMainGenThreeQnaAcc{} against \RateMainGenOneQnaAcc{}.
-Naming the source is a different property.
-On bug-fixing tasks it appears only when an independent judge compares replica outputs: recovery is \RateMainJudgeOnlyCodeRec{} for the judge-only arm and \RateMainBpdCodeRec{} for the full backpropagation pipeline (exact McNemar, \PvalMainCodeRecJudgeOnlyvsBpd), against \RateMainFlatThreeCodeRec{} for a majority vote without a judge.
-On question answering the ranking flips: a string-level majority vote recovers in \RateMainFlatThreeQnaRec{} of runs (general-3: \RateMainGenThreeQnaRec{}) and the judge pipeline in \RateMainBpdQnaRec{}.
+Three isolated replicas remove the damage of the lie on question answering, where every three-replica arm reaches accuracy \RateMainGenThreeQnaAcc{} against \RateMainGenOneQnaAcc{} for one loop.
+On bug fixing, replication alone is not enough: accuracy is \RateMainGenThreeCodeAcc{} and \RateMainFlatThreeCodeAcc{} for the two majority arms, against \RateMainJudgeOnlyCodeAcc{} and \RateMainBpdCodeAcc{} for the arms with a judge, and the majority arms collapse when the poisoned replica is the one their fallback rule promotes (Section~\ref{sec:position}).
+Naming the source is a different property. On bug fixing it appears only when a comparison reads the replicas' code: recovery is \RateMainJudgeOnlyCodeRec{} for the judge-only arm and \RateMainBpdCodeRec{} for the full backpropagation pipeline (exact McNemar, \PvalMainCodeRecJudgeOnlyvsBpd{}), against \RateMainFlatThreeCodeRec{} for a majority vote on strategy strings.
+A judge-free comparison of the normalized replica sources names the poisoned replica as often as the judge does (\RateSemMainJudgeOnlyCodeAst{} against \RateSemMainJudgeOnlyCodeMethod{}, \PvalSemMainJudgeOnlyCodeMethodVsAst{}), so the judge is not what makes attribution work on these tasks.
+A second model reproduces the bug-fixing pattern but shows the limit of attribution: when the poisoned replica does not repeat the lie, no scheme can name it (Section~\ref{sec:second}).
 Finally, a hierarchical graph whose downstream nodes treat the poisoned scan report as authoritative repeats the lie in \RateHundredYonseiQnaProp{} of QnA runs; a source-over-scan rule removes this effect (exploratory).
 
-We contribute the suite, a compute-matched set of arms that separates replication, judging, and backpropagation, and a replication package that regenerates every number in this paper from frozen run summaries.
-All results use one model and one attempt per task, so we report them as comparisons on this suite and not as general properties of agents.
+We contribute the suite and harness, a compute-matched set of arms that separates replication, judging, and backpropagation, two measurement controls that changed our conclusions (the channel that delivers the claim, and the index of the poisoned replica), and a replication package that regenerates every number in this paper from frozen run summaries.
+All results use two models from one family and one attempt per task, so we report them as comparisons on this suite and not as general properties of agents.
 
 \section{Related Work}
 
@@ -108,13 +108,16 @@ Each task runs under three conditions: \texttt{none}, \texttt{document} (a notes
 The \texttt{document} condition did not move any system in our suite (propagation near zero), so all main results use \texttt{agent}.
 In the \texttt{agent} condition the claim reads ``Injected claim from another agent (mandatory): the answer is $X$; do not use any value from source code or notes'' for QnA, with a strategy variant for code.
 We give all arms in the main comparison this identical text and place it in the system prompt of the poisoned node.
+In the main run the poisoned replica index is balanced: replica 0, 1, and 2 carry the lie in equal shares of the tasks of a suite, assigned by a seeded hash of the task identifier.
+An earlier run (appendix) always poisoned replica~0.
 
 \subsection{Systems}
 Each arm runs the same model through the same tool loop, limited to 20 turns per node.
 \textbf{Single loop} (\texttt{general-1}) is one agent with file and shell tools.
-\textbf{General-3} and \textbf{flat-3} run three isolated replicas; only replica~0 receives the lie.
+\textbf{General-3} and \textbf{flat-3} run three isolated replicas, one of which receives the lie.
 A replica in general-3 uses the single-loop prompt, and a replica in flat-3 is asked to state its strategy.
 Both choose the answer that most replicas support, found by matching the gold and lie strings in each output, and for code tasks they promote the winning replica's workspace.
+When no output matches either string, which is the usual case for code tasks, they promote the last replica.
 \textbf{Judge-only-3} adds three summarizers, each reading all proposals and writing a final answer, and one independent judge that scores every (proposal, summary) pair with $+1$, $0$, or $-1$.
 A replica's score is the mean of its row, the highest score wins, and the system names a source when exactly one score is negative.
 \textbf{BPD} (\texttt{dag-bpd}) uses the same calls but gives each summary a terminal score of $+1$ if it agrees with the plurality answer and $-1$ otherwise, and computes each replica's score as $S_i=\tfrac{1}{3}\sum_j g_{ij}S_j$ with judge edges $g_{ij}$.
@@ -122,19 +125,36 @@ A replica's score is the mean of its row, the highest score wins, and the system
 In its naive form, later nodes treat the scan as authoritative.
 The source-over-scan variant instructs the implement node to prefer source and tests over the scan report, and names the scan node only when they conflict and the scan claim was rejected.
 We added this rule after seeing the naive results, so we label it exploratory.
+The hierarchical arm was run only in earlier runs.
 
-\subsection{Metrics and statistics}
+\subsection{Judge-free reference methods}
+To separate the judge from the act of comparing replicas, we attribute offline on code tasks, with no model call, from the three replicas' final workspaces.
+The \emph{AST outlier} parses each replica's non-test Python sources, drops docstrings and comments, and flags a replica when it differs from two identical others.
+The \emph{test oracle} flags the one replica that fails the hidden tests while the other two pass; the arms never see these tests, so it is an upper bound and not a competing method.
+Both are scored like detection: a hit when the flagged replica is the poisoned one, and a miss when none or a wrong one is flagged.
+
+\subsection{Models, metrics, and statistics}
+The main runs use \texttt{gpt-5.6-luna}; a second run repeats the configuration with \texttt{gpt-6-luna}. Both are reached through the same OpenAI-compatible interface, with one attempt per task.
 \emph{Accuracy} is the share of runs with a correct final result; \emph{propagation} is the share in which the lie appears in the final output; \emph{detection} is the share in which the system names the node that carried the lie; and \emph{recovery} requires detection and accuracy.
 The single loop reports no source, so its detection is zero by construction.
-We also record whether the poisoned replica itself output the lie (\emph{Emit}), because a vote can name a source only when the lie is visible.
-Intervals are percentile bootstrap intervals over tasks (1{,}000 resamples, fixed seed); paired differences between arms use the exact McNemar test on task identity.
+We also record whether the poisoned replica itself output the lie (\emph{Emit}), because a vote can name a source only when the lie is visible; on code tasks Emit is a lexical proxy.
+Intervals are percentile bootstrap intervals over tasks (1{,}000 resamples, fixed seed); paired differences between arms use the exact McNemar test on task identity, and dependence of a rate on the poisoned replica index uses a permutation test of the chi-square statistic.
 Token counts are logged as the cost proxy, since the endpoint reports no price.
-Each task has a 60-second wall-clock limit. In the first pass \CountBSixBpdCodeTimeout{} BPD code tasks hit it, with no tokens recorded, and no other arm did.
-We re-ran exactly those tasks once with the identical configuration and report the merged run as the main result; \CountBSixRBpdCodeTimeout{} tasks timed out again and count as failures.
-The as-run results are in the appendix.
+Each task has a 180-second wall-clock limit, and no task reached it in the main or second-model run.
 Three-replica arms use about three times the input tokens of the single loop (Table~\ref{tab:main-tokens}), and arms with a judge add summarizer and judge calls.
 
+\section{Results}
+
+\subsection{Isolation under the same injected claim}
 \input{../output/tables/tab_main_compact.tex}
+
+Table~\ref{tab:main} compares the five arms with the claim in the poisoned node's system prompt and the poisoned replica index balanced.
+The single loop follows the lie: it repeats it in \RateMainGenOneQnaProp{} of QnA runs and \RateMainGenOneCodeProp{} of code runs, and its accuracy is \RateMainGenOneQnaAcc{} and \RateMainGenOneCodeAcc{}.
+On QnA, accuracy is \RateMainGenThreeQnaAcc{} for general-3, \RateMainFlatThreeQnaAcc{} for flat-3, \RateMainJudgeOnlyQnaAcc{} for judge-only, and \RateMainBpdQnaAcc{} for BPD.
+On code tasks accuracy separates the arms: \RateMainGenThreeCodeAcc{}, \RateMainFlatThreeCodeAcc{}, \RateMainJudgeOnlyCodeAcc{}, and \RateMainBpdCodeAcc{} in the same order.
+Both majority arms beat the single loop (exact McNemar against general-1: general-3 \PvalMainCodeAccGenOnevsGenThree{}, flat-3 \PvalMainCodeAccGenOnevsFlatThree{}) and both stay below the judge arms (flat-3 against judge-only, \PvalMainCodeAccFlatThreevsJudgeOnly{}).
+Whether the poisoned replica repeats the lie is itself an outcome, and it differs by suite: in general-3 it outputs the lie in \RateMainGenThreeQnaEmit{} of QnA runs but only \RateMainGenThreeCodeEmit{} of code runs, because on code tasks it often ignores or repairs around the claim.
+This Emit rate limits how often any scheme can name a source.
 
 \begin{table}[t]
 \centering
@@ -154,33 +174,72 @@ dag-bpd & \TokMainBpdQna & \TokMainBpdCode \\
 \end{tabular}
 \end{table}
 
-\section{Results}
+\subsection{Majority arms depend on which replica is poisoned}
+\label{sec:position}
+\input{../output/tables/tab_position.tex}
 
-\subsection{Isolation and attribution under the same injected claim}
-Table~\ref{tab:main} compares the five arms with the claim in the poisoned node's system prompt.
-The single loop follows the lie: it repeats it in \RateMainGenOneQnaProp{} of QnA runs and \RateMainGenOneCodeProp{} of code runs, and its accuracy is \RateMainGenOneQnaAcc{} and \RateMainGenOneCodeAcc{}.
-Three replicas change this. QnA accuracy is \RateMainGenThreeQnaAcc{} for general-3, \RateMainFlatThreeQnaAcc{} for flat-3, \RateMainJudgeOnlyQnaAcc{} for judge-only, and \RateMainBpdQnaAcc{} for BPD.
-On code tasks, propagation is \RateMainGenThreeCodeProp{}, \RateMainFlatThreeCodeProp{}, \RateMainJudgeOnlyCodeProp{}, and \RateMainBpdCodeProp{} in the same order, and accuracy is \RateMainGenThreeCodeAcc{}, \RateMainFlatThreeCodeAcc{}, \RateMainJudgeOnlyCodeAcc{}, and \RateMainBpdCodeAcc{}.
-General-3 against the single loop differs on accuracy in both suites (exact McNemar, QnA \PvalMainQnaAccGenOnevsGenThree, code \PvalMainCodeAccGenOnevsGenThree).
+The majority arms look strong when the lie always sits in replica~0.
+In that earlier design flat-3 and general-3 reach code accuracy \RateBSixRFlatThreeCodeAcc{} and \RateBSixRGenThreeCodeAcc{}.
+With the index balanced, accuracy depends on it (Table~\ref{tab:position}): flat-3 reaches \RatePosBSevenFlatThreeCodeAccZero{}, \RatePosBSevenFlatThreeCodeAccOne{}, and \RatePosBSevenFlatThreeCodeAccTwo{} when replica 0, 1, or 2 lies (permutation test, \PvalPosBSevenFlatThreeCodeAcc{}), and general-3 reaches \RatePosBSevenGenThreeCodeAccZero{}, \RatePosBSevenGenThreeCodeAccOne{}, and \RatePosBSevenGenThreeCodeAccTwo{} (\PvalPosBSevenGenThreeCodeAcc{}).
+The cause is the fallback rule. Code proposals rarely contain the gold or lie string, so no proposal supplies a vote and the rule promotes the last replica.
+In the raw runs the promoted source equals replica~2's source in \RateFbMainFlatThreeCodeLast{} of flat-3 tasks and \RateFbMainGenThreeCodeLast{} of general-3 tasks (Table~\ref{tab:fallback} in the appendix).
+When the promoted source equals only the poisoned replica's, flat-3 accuracy is \RateFbMainFlatThreeCodeAccPoisonedOnly{} (\CountFbMainFlatThreeCodePoisonedOnly{} tasks) and otherwise \RateFbMainFlatThreeCodeAccOther{}.
+A majority vote on code strategies therefore behaves like picking the last replica, and its accuracy is that replica's chance of being clean.
+The arms with a judge are not affected: judge-only accuracy is \RatePosBSevenJudgeOnlyCodeAccZero{}, \RatePosBSevenJudgeOnlyCodeAccOne{}, and \RatePosBSevenJudgeOnlyCodeAccTwo{}, and BPD accuracy is \RatePosBSevenBpdCodeAccZero{}, \RatePosBSevenBpdCodeAccOne{}, and \RatePosBSevenBpdCodeAccTwo{}.
+Their recovery does not depend detectably on the index either (judge-only on code, \PvalPosBSevenJudgeOnlyCodeRec{}; BPD, \PvalPosBSevenBpdCodeRec{}), but with about a third of the tasks per cell this test cannot rule out small effects.
 
-Whether the poisoned replica repeats the lie is itself an outcome, and it differs by suite.
-In general-3 the poisoned replica outputs the lie in \RateMainGenThreeQnaEmit{} of QnA runs but only \RateMainGenThreeCodeEmit{} of code runs. On code tasks it often ignores or repairs around the claim, which limits how often any scheme can name a source.
-
-Naming the source separates the arms more than accuracy does.
-On QnA tasks the answer space is small and string matching works. Given that the poisoned replica emitted the lie, general-3 names it in \RateMainGenThreeQnaDetEmit{} of runs and flat-3 in \RateMainFlatThreeQnaDetEmit{}, against \RateMainJudgeOnlyQnaDetEmit{} for judge-only and \RateMainBpdQnaDetEmit{} for BPD.
-Recovery over all runs is \RateMainGenThreeQnaRec{}, \RateMainFlatThreeQnaRec{}, \RateMainJudgeOnlyQnaRec{}, and \RateMainBpdQnaRec{} (flat-3 against BPD, \PvalMainQnaRecFlatThreevsBpd).
-In an earlier run that delivered the claim to the single loop as a user message, general-3 named the source in none of its runs; there the single loop almost never repeated the lie (propagation \RateBFiveGenOneQnaProp{}), so a vote had nothing to count. We read that zero as an effect of delivery, not of architecture.
+\subsection{Naming the source}
+Attribution separates the arms more than accuracy does.
+On QnA tasks the answer space is small and string matching works. General-3 and flat-3 name the source in \RateMainGenThreeQnaDet{} and \RateMainFlatThreeQnaDet{} of runs, against \RateMainJudgeOnlyQnaDet{} for judge-only and \RateMainBpdQnaDet{} for BPD.
+The majority vote recovers more often than the judge it is compared with (general-3 against judge-only, \PvalMainQnaRecGenThreevsJudgeOnly{}; flat-3 against judge-only, \PvalMainQnaRecFlatThreevsJudgeOnly{}), because the judge misses some runs in which the lie was visible.
 On code tasks the two majority arms name the source in \RateMainGenThreeCodeDet{} and \RateMainFlatThreeCodeDet{} of runs, because the strategy phrases of three replicas rarely match as strings.
 The judge-only arm names it in \RateMainJudgeOnlyCodeDet{} and BPD in \RateMainBpdCodeDet{}; given that the lie was emitted, these rates are \RateMainJudgeOnlyCodeDetEmit{} and \RateMainBpdCodeDetEmit{}.
+The ceiling is therefore the Emit rate, \RateMainJudgeOnlyCodeEmit{} and \RateMainBpdCodeEmit{} in these arms.
 
-\subsection{What the judge and the backward pass each contribute}
+\subsection{What the judge, the backward pass, and a structural diff contribute}
 The judge-only and BPD arms make the same calls and differ only in the terminal weighting.
-On code tasks their recovery is \RateMainJudgeOnlyCodeRec{} and \RateMainBpdCodeRec{} (exact McNemar, \PvalMainCodeRecJudgeOnlyvsBpd), and on QnA tasks \RateMainJudgeOnlyQnaRec{} and \RateMainBpdQnaRec{} (\PvalMainQnaRecJudgeOnlyvsBpd).
+On code tasks their recovery is \RateMainJudgeOnlyCodeRec{} and \RateMainBpdCodeRec{} (exact McNemar, \PvalMainCodeRecJudgeOnlyvsBpd{}), and on QnA tasks \RateMainJudgeOnlyQnaRec{} and \RateMainBpdQnaRec{} (\PvalMainQnaRecJudgeOnlyvsBpd{}).
 In this suite the backward pass adds no measurable recovery beyond the judge.
-The judge does the work on code: replacing it with a string-level vote lowers recovery from \RateMainJudgeOnlyCodeRec{} to \RateMainFlatThreeCodeRec{} (\PvalMainCodeRecFlatThreevsJudgeOnly).
-On QnA the judge does the opposite: it recovers less often than the string-level vote it replaces (general-3 against judge-only, \PvalMainQnaRecGenThreevsJudgeOnly), because it misses some runs in which the lie was visible.
-Because the majority arms use string matching, this comparison mixes the value of an LLM judge with the value of semantic matching.
-\todo{add a judge-free semantic baseline, for example clustering of replica patches by test behavior, before claiming the judge itself is necessary}
+The judge does the work on code compared with a string vote: replacing it lowers recovery from \RateMainJudgeOnlyCodeRec{} to \RateMainFlatThreeCodeRec{} (\PvalMainCodeRecFlatThreevsJudgeOnly{}).
+Because the majority arms use string matching, this comparison mixes the value of an LLM judge with the value of reading the replicas' content.
+
+\input{../output/tables/tab_semantic.tex}
+
+The judge-free references separate the two (Table~\ref{tab:semantic}).
+On the replicas of the judge-only arm the AST outlier names the poisoned replica in \RateSemMainJudgeOnlyCodeAst{} of runs and a wrong replica in \RateSemMainJudgeOnlyCodeAstWrong{}, against \RateSemMainJudgeOnlyCodeMethod{} for the judge itself (exact McNemar, \PvalSemMainJudgeOnlyCodeMethodVsAst{}); on the BPD replicas the rates are \RateSemMainBpdCodeAst{} and \RateSemMainBpdCodeMethod{} (\PvalSemMainBpdCodeMethodVsAst{}).
+On the replicas of flat-3, the same offline rule names the source in \RateSemMainFlatThreeCodeAst{} of runs, where the arm's own string vote names it in \RateSemMainFlatThreeCodeMethod{}.
+The test oracle reaches \RateSemMainJudgeOnlyCodeOracle{} on the judge-only replicas, close to the share of runs in which the poisoned replica fails its tests at all (\RateSemMainJudgeOnlyCodePoisonedFails{}).
+On these tasks, then, the gain of the judge arms over the string vote comes from comparing the replicas' code at all, and the judge adds no measurable attribution beyond a structural diff.
+The diff works because the correct replicas converge on the same fix, so the one that differs stands out; we expect it to degrade when correct replicas legitimately differ.
+
+\subsection{A second model}
+\label{sec:second}
+\input{../output/tables/tab_second_compact.tex}
+
+Table~\ref{tab:second} repeats the configuration with \texttt{gpt-6-luna}.
+The bug-fixing results carry over.
+The single loop follows the lie (QnA propagation \RateBEightGenOneQnaProp{}, code accuracy \RateBEightGenOneCodeAcc{}).
+The majority arms depend on the index again: flat-3 accuracy is \RatePosBEightFlatThreeCodeAccZero{}, \RatePosBEightFlatThreeCodeAccOne{}, and \RatePosBEightFlatThreeCodeAccTwo{} for replica 0, 1, and 2 (\PvalPosBEightFlatThreeCodeAcc{}), and the fallback rule promotes replica~2's source in \RateFbBEightFlatThreeCodeLast{} of tasks.
+The judge arms keep accuracy \RateBEightJudgeOnlyCodeAcc{} and \RateBEightBpdCodeAcc{} and recovery \RateBEightJudgeOnlyCodeRec{} and \RateBEightBpdCodeRec{}, with no difference between them (\PvalBEightCodeRecJudgeOnlyvsBpd{}).
+The AST outlier names the poisoned replica in \RateSemBEightJudgeOnlyCodeAst{} and \RateSemBEightBpdCodeAst{} of runs on the judge-only and BPD replicas, against \RateSemBEightJudgeOnlyCodeMethod{} and \RateSemBEightBpdCodeMethod{} for the judges (\PvalSemBEightJudgeOnlyCodeMethodVsAst{} and \PvalSemBEightBpdCodeMethodVsAst{}).
+On this model the judge is slightly ahead of the diff, but not detectably so.
+One index effect appears for a judge arm on this model: judge-only code recovery is \RatePosBEightJudgeOnlyCodeRecZero{}, \RatePosBEightJudgeOnlyCodeRecOne{}, and \RatePosBEightJudgeOnlyCodeRecTwo{} for replica 0, 1, and 2 (\PvalPosBEightJudgeOnlyCodeRec{}), while BPD does not show it (\PvalPosBEightBpdCodeRec{}); we ran 20 recovery tests across the two position tables without correction, so we treat this as a lead and not a finding.
+
+The QnA attribution result does not carry over.
+Detection falls to \RateBEightFlatThreeQnaDet{} for flat-3, \RateBEightJudgeOnlyQnaDet{} for judge-only, and \RateBEightBpdQnaDet{} for BPD, while general-3 stays at \RateBEightGenThreeQnaDet{}.
+In the first three arms the poisoned replica repeats the lie in only \RateBEightFlatThreeQnaEmit{}, \RateBEightJudgeOnlyQnaEmit{}, and \RateBEightBpdQnaEmit{} of runs, whereas in general-3 it does so in \RateBEightGenThreeQnaEmit{}.
+Given that the lie was emitted, detection is \RateBEightFlatThreeQnaDetEmit{}, \RateBEightJudgeOnlyQnaDetEmit{}, and \RateBEightBpdQnaDetEmit{}, so attribution works when the lie is visible and cannot work when it is not.
+Accuracy stays at \RateBEightBpdQnaAcc{}: a replica that does not repeat the lie needs no isolation.
+The event logs show why, and it is the base prompt rather than the claim, which is identical (Table~\ref{tab:emit}).
+Flat-3, judge-only, and BPD tell the replica it is a proposal worker that should edit files; general-3 uses the single-loop prompt.
+On \texttt{gpt-6-luna}, reading the file decides the answer. In flat-3 the poisoned replica calls a tool and answers with the source value in \RateBehBEightFlatThreeQnaToolGold{} of tasks, and it answers with the lie without a tool in \RateBehBEightFlatThreeQnaNoToolLie{}.
+Under the general-3 prompt the same model does the opposite: no tool and the lie in \RateBehBEightGenThreeQnaNoToolLie{} of tasks.
+On \texttt{gpt-5.6-luna} the poisoned replica skips tools in \RateBehBSevenFlatThreeQnaNoTool{} of flat-3 tasks and in \RateBehBSevenGenThreeQnaNoTool{} of general-3 tasks, and a tool call does not flip it: flat-3 answers with the lie after a tool in \RateBehBSevenFlatThreeQnaToolLie{} of tasks and with the source value in \RateBehBSevenFlatThreeQnaToolGold{}.
+The second model drops the claim once it has read the source; the first model states the claim either way.
+The user prompt also says to prefer source code, which conflicts with the claim, and the extra tool turns show up as input tokens (\TokBEightFlatThreeQna{}k against \TokBSevenFlatThreeQna{}k for flat-3 on QnA).
+Judge-only and BPD match flat-3 in the table, since they share its worker prompt.
+
+\input{../output/tables/tab_emit.tex}
 
 \subsection{A hierarchy that trusts its first node}
 In the hierarchical system the lie enters the scan report, so the injection point differs from the other arms and the comparison is indicative.
@@ -194,24 +253,29 @@ The rule works because the source file and the tests give the implement node an 
 The single loop's QnA propagation is \RateHundredGenOneQnaProp{} with the legacy user-message wording (100 tasks), \RateBFourGenOneQnaProp{} in a 20-task pilot, \RateBFiveGenOneQnaProp{} when the replica-prompt text is delivered as a user message, and \RateMainGenOneQnaProp{} when the same text is placed in the system prompt.
 Code propagation in the same four settings is \RateHundredGenOneCodeProp{}, \RateBFourGenOneCodeProp{}, \RateBFiveGenOneCodeProp{}, and \RateMainGenOneCodeProp{}.
 In our setting the delivery channel decides whether a poisoned single loop repeats the lie at all: a claim in the system prompt is followed, and the same claim in a user message mostly is not.
-Earlier comparisons gave the single loop the claim as a user message and the other arms in the system prompt, which made the single loop look more robust than it is (QnA accuracy \RateBFiveGenOneQnaAcc{} there, \RateMainGenOneQnaAcc{} here).
-We therefore report the system-prompt run as the main result and the user-message run in the appendix.
+Earlier comparisons gave the single loop the claim as a user message and the other arms in the system prompt, which made the single loop look more robust than it is (QnA accuracy \RateBFiveGenOneQnaAcc{} there, \RateMainGenOneQnaAcc{} here); in that run general-3 also named the source in none of its runs, because a single loop that does not repeat the lie leaves the vote nothing to count.
+We therefore report the system-prompt runs as the main result and the user-message run in the appendix.
 
 \section{Discussion}
 
 \paragraph{Three separate properties.}
 Our results suggest treating isolation, comparison, and attribution as separate design choices.
 Isolation limits how far a lie travels, and replication provides it at about three times the token cost; with the lie in the system prompt, a single loop has no isolation at all on QnA.
-Comparison needs a node that sees several branches at once.
-Attribution maps a disagreement between branches back to the node that produced the outlier.
+Replication alone does not protect bug fixing, because choosing among replicas without reading them is a gamble on which one is clean.
+Comparison needs a node that sees several branches at once and reads their content.
+Attribution maps a disagreement between branches back to the node that produced the outlier, and it is bounded by whether the poisoned node emits the lie at all.
 A directed acyclic graph supplies the edges that make this mapping possible, but a graph with a single authoritative upstream node has no branch to compare against.
 That is consistent with the hierarchical system repeating the lie when its scan node is poisoned, and with the fix that adds an independent source of evidence.
 
 \paragraph{Where the judge matters.}
 Majority voting is enough when answers are short strings and the lie is visible as one: on QnA it names the source more often than the judge does.
-When correct and planted behavior are described in free text, a comparison step has to read meaning, and an LLM judge does.
-We did not test judge-free semantic comparison, so we cannot say whether any semantic matcher would do.
-We also did not randomize which replica carries the lie, so position effects in the judge remain open.
+When correct and planted behavior are described in free text, a comparison step has to read the replicas' content, and an LLM judge does.
+On these small single-module tasks a judge-free structural diff does the same job as well as the judge does, because the correct replicas write the same fix and the one that differs stands out.
+We expect this to break on larger tasks in which correct replicas legitimately differ. There a judge or a behavioral comparison may matter, but we did not test that.
+
+\paragraph{Measurement lessons.}
+Two controls changed our conclusions. Placing the same text in a user message instead of the system prompt moved single-loop QnA propagation from \RateBFiveGenOneQnaProp{} to \RateMainGenOneQnaProp{}, and fixing the poisoned replica at index~0 hid a failure of the majority arms that appears with a balanced index.
+Studies of internal poison should vary both, and report whether the poisoned node repeats the lie.
 
 \paragraph{Relation to resilience studies.}
 \citet{huang2024resilience} find that a hierarchical structure is the most resilient to faulty agents.
@@ -220,23 +284,25 @@ The two findings agree if resilience depends on whether downstream nodes have an
 We make this reading as a hypothesis; our design does not vary shape and independence separately.
 
 \paragraph{Practical guidance.}
-For a system that must both stay correct and report where a bad claim came from, our data favor redundant branches followed by an independent comparison over authoritative single nodes.
-Backpropagation over the comparison output did not help here, and it is the part with the most implementation cost.
+For a system that must both stay correct and report where a bad claim came from, our data favor redundant branches followed by a comparison that reads their content over authoritative single nodes.
+On small tasks the comparison can be a normalized-source diff; the judge call and the backward pass add cost without measurable benefit here.
 
 \section{Conclusion}
-A planted lie in one node of a coding-agent graph damages a three-replica system less than it damages a single loop, but only a judge that compares replica outputs names the node on code tasks, and the contribution backpropagation on top of that judge added no measurable recovery.
+A planted lie in one node of a coding-agent graph damages a three-replica system less than it damages a single loop, but on bug fixing only a comparison that reads the replicas' code keeps accuracy independent of which replica lies and names the node, whether it is an LLM judge or a judge-free diff of normalized sources.
+Backpropagation on top of the judge added no measurable recovery, and attribution is capped by whether the poisoned replica repeats the lie, as a second model shows.
 A hierarchical graph whose downstream nodes trust a poisoned scan report repeats the lie in most QnA runs unless a node has an independent check.
-The suite and scripts are released so that others can test whether these patterns hold for other models and harder tasks.
+The suite and scripts are released so that others can test whether these patterns hold for other model families and harder tasks.
 
 \section*{Limitations}
-All results come from one model, \texttt{gpt-5.6-luna}, with one attempt per task, so run-to-run variance is estimated only from repeated earlier runs of the same arm, where BPD recovery on QnA varied by a few points.
+All results come from two models of one family, \texttt{gpt-5.6-luna} and \texttt{gpt-6-luna}, with one attempt per task, so run-to-run variance is estimated only from repeated earlier runs of the same arm, where BPD recovery on QnA varied by a few points.
 The tasks are templates expanded from 20 hand-written items per part, single-module, and the lie is stated explicitly rather than hidden in plausible text; harder repository-scale tasks may behave differently.
-The poisoned replica is always replica~0, so position effects in the judge and in tie-breaking are not separated from the effect of the lie.
-Majority arms use string matching, which understates what a judge-free semantic method could do on code tasks.
+The judge-free baseline works because the correct replicas on these tasks converge on the same normalized source; it is not evidence for larger tasks, and its test-oracle variant uses tests the arms never see.
+The majority arms promote the last replica when no proposal matches, which is a design choice; other tie-breaks (random, or test-based) might change their code accuracy, so their results describe this implementation.
+Recovery of the judge arms by replica index was tested with about a third of the tasks per cell, which cannot rule out small position effects, and one uncorrected test on the second model is nominally significant (Section~\ref{sec:second}).
 How the claim is delivered changes single-loop QnA propagation from \RateBFiveGenOneQnaProp{} to \RateMainGenOneQnaProp{}, so absolute single-loop rates describe this injection and not agents in general.
 \emph{Emit} on code tasks is a lexical proxy (the lie phrase, or a pattern in the replica's source file) and can miss paraphrased compliance.
-The 60-second task limit affects the three-stage judge pipelines more than the other arms, and \CountMainBpdCodeTimeout{} BPD code tasks still count as failures after one re-run, so BPD code accuracy is a lower bound.
-The hierarchical arm receives the lie at a different node, and its source-over-scan rule was added after the first results, so it is exploratory.
+The second model states the QnA lie only under the single-loop prompt; under the proposal-worker prompt it reads the source and answers with that value (Section~\ref{sec:second}), so the drop in detection is a prompt-by-model interaction and not a property of the model alone.
+The hierarchical arm receives the lie at a different node and was run only in earlier runs, and its source-over-scan rule was added after the first results, so it is exploratory.
 Compute is matched only approximately: judge arms add summarizer and judge calls, and tokens are the only cost proxy.
 The \texttt{document} condition did not affect any system, so we report no document-poison result.
 The stronger planted claim we use is a stress test and does not describe the lies real collaborators produce.
@@ -247,14 +313,24 @@ The injected claims are plain statements, and the paper does not describe an att
 \todo{confirm with the Responsible NLP checklist; disclose AI coding and writing assistance in the Acknowledgments as ACL policy requires}
 
 \section*{Reproducibility}
-Scripts \texttt{code/01} to \texttt{code/05} regenerate every table and macro in this paper from frozen per-run summaries (\texttt{score.json}); no number in the text is typed by hand.
+Scripts \texttt{code/01} to \texttt{code/10} regenerate every table and macro in this paper from frozen per-run summaries (\texttt{score.json}) and the raw replica workspaces; no number in the text is typed by hand.
 \todo{add an anonymous repository link for review, and a persistent archive of the raw run transcripts}
 
 \bibliography{references}
 
 \appendix
-\section{Full results with intervals}
+\section{Earlier design and full results with intervals}
 \label{app:full}
+The earlier run poisoned replica~0 in every task and used a 60-second task limit. In its first pass \CountBSixBpdCodeTimeout{} BPD code tasks hit the limit, with no tokens recorded, and no other arm did; we re-ran exactly those tasks once with the identical configuration and report the merged run, in which \CountBSixRBpdCodeTimeout{} tasks timed out again and count as failures (BPD code accuracy there is a lower bound).
+Tables~\ref{tab:replication} and~\ref{tab:replication-b8} compare runs on identical task identifiers.
+\input{../output/tables/tab_budget7.tex}
+\input{../output/tables/tab_budget8.tex}
+\input{../output/tables/tab_position_b8.tex}
+\input{../output/tables/tab_fallback.tex}
+\input{../output/tables/tab_replication.tex}
+\input{../output/tables/tab_replication_b8.tex}
+\input{../output/tables/tab_semantic_b8.tex}
+\input{../output/tables/tab_semantic_b6r.tex}
 \input{../output/tables/tab_budget6_retried.tex}
 \input{../output/tables/tab_budget6.tex}
 \input{../output/tables/tab_budget5.tex}
