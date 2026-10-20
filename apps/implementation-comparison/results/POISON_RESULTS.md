@@ -1,4 +1,6 @@
-# Poison / Attribution 실험 결과 보고서
+# Poison / Attribution experiment log
+
+**Current status (2026-10-20, English):** the paper's main run is `poison-budget-7` (`gpt-5.6-luna`, balanced poisoned-replica index, 180 s limit). `poison-budget-8` repeats it on `gpt-6-luna`. The one-stop English summary is `results/EXPERIMENT_SUMMARY.md`. Sections 12–14 below are the English record of those runs. Sections 1–11 are the earlier Korean log and stop at budget-6; section 11 is not the main result anymore.
 
 **작성일:** 2026-09-09  
 **범위:** `apps/implementation-comparison` poison suite  
@@ -399,7 +401,7 @@ PYTHONPATH=src python -m pytest tests/test_poison.py tests/test_poison_code_task
 
 ---
 
-## 11. Budget-6 — 모든 arm에 동일 채널(system prompt) 주입 (2026-10-11, n=100+100) ★ 메인 결과
+## 11. Budget-6 — 모든 arm에 동일 채널(system prompt) 주입 (2026-10-11, n=100+100) — superseded by budget-7
 
 **왜 했나:** §10의 채널 혼입(I1) 제거. general-1/general-3 독 replica도 flat/judge-only/BPD와 **바이트 동일한 문구를 system prompt**로 받는다(`injection_profile="system"`, `--arms budget-6`). 새 지표 `lie_emitted`(독 replica 자신의 출력에 거짓이 나왔는가)와 `detection_given_emitted`(Det|Emit)를 기록한다. 코드 과제의 Emit은 거짓 문구 또는 소스 파일 패턴 일치를 쓰는 **어휘 기반 근사**라 의역된 순응은 놓칠 수 있다.
 
@@ -459,3 +461,44 @@ python code/01_manifest_poison_runs.py
 python code/02_aggregate_poison_rates.py
 python code/03_export_paper_tables.py
 ```
+
+---
+
+## 12. Budget-7 — balanced poison position (2026-10-13, n=100+100) — paper main run
+
+**Why:** budget-6 always poisoned replica 0, and the string-majority fallback promotes replica 2 when no proposal matches the gold or lie string. That hid a code-accuracy failure.
+
+**Run:** `compare_poison(Path('results/poison-budget-7'), condition='agent', task_set='all', scale='all', arms='budget-6', max_turns=20, poison_position='balanced', task_timeout=180.0)`. Model `gpt-5.6-luna`. 1,000 runs, 0 timeouts. Position assignment is a seeded hash (`20261011`): 34/33/33 tasks per index.
+
+| arm | QnA acc/prop/det | Code acc/prop/det |
+|-----|------------------|-------------------|
+| general-1 | 0.00 / 1.00 / 0 | 0.59 / 0.40 / 0 |
+| general-3 | 1.00 / 0 / 1.00 | 0.81 / 0.15 / 0.02 |
+| flat-3 | 1.00 / 0 / 0.99 | 0.72 / 0.26 / 0.01 |
+| judge-only-3 | 1.00 / 0 / 0.91 | 1.00 / 0 / 0.63 |
+| dag-bpd | 1.00 / 0 / 0.94 | 0.99 / 0.01 / 0.67 |
+
+Code accuracy by poisoned index: flat-3 0.88 / 0.91 / 0.36 and general-3 0.91 / 1.00 / 0.52 (permutation p < 0.001). Judge-only and BPD stay at 0.97–1.00. `code/09_majority_fallback.py`: the promoted source equals replica 2 in 0.90 of flat-3 code tasks. When that source is only the poisoned replica's, flat-3 accuracy is 0.30 (40 tasks); otherwise 1.00.
+
+Judge vs BPD code recovery: discordant 7 vs 11, p = 0.48. QnA recovery, general-3 vs judge-only: p = 0.004 (majority is higher).
+
+## 13. Budget-8 — same design, `gpt-6-luna` (2026-10-16)
+
+Same configuration as budget-7. About 4 h 15 min, 0 timeouts. `llm.py` applies the gpt-5.6 chat-completions compatibility to `gpt-6*` models.
+
+Code replicates: flat-3 accuracy 0.70 (0.30 when replica 2 is poisoned); judge-only 0.99; BPD 0.98; code detection 0.60 and 0.61; backprop adds nothing (p = 1.0).
+
+QnA detection does not replicate for the proposal-worker arms: flat-3 0.12, judge-only 0.11, BPD 0.10, against general-3 0.95. Emit in those three arms is 0.12 / 0.12 / 0.10. `code/10_qna_emit_behavior.py`: on this model, calling a tool and answering with the source value go together (flat-3 0.88), and answering with no tool means stating the lie (0.11). `gpt-5.6-luna` states the lie even after a tool call. Do not read this as the second model being safer. Det|Emit remains 0.92–1.00.
+
+Uncorrected lead: judge-only code recovery by index is 0.65 / 0.42 / 0.73 (p = 0.037) among 20 recovery tests. BPD does not show it (p = 0.20). The paper calls this a lead, not a finding.
+
+## 14. Offline analyses (no LLM calls)
+
+| Script | Question | Result on budget-7 (budget-8) |
+|--------|----------|--------------------------------|
+| `code/08_semantic_baselines.py` | Does a normalized-source diff name the poisoned replica? | Judge-only AST hit 0.60 vs the judge's own detection 0.63 (McNemar p = 0.58). BPD 0.67 vs 0.67. |
+| `code/11_selection_counterfactual.py` | What if that diff also chose the workspace? | Flat-3 accuracy 0.98 (0.98) against 0.72 (0.70) actual and 0.79 (0.79) for a uniform draw. Judge-only AST 0.97 (0.99) against recorded 1.00 (0.99). |
+| `code/07_position_breakdown.py` | Does the rate depend on the poisoned index, and do runs replicate? | Majority code accuracy does. Judge/BPD code recovery does not detectably (n≈33 per cell). |
+
+The diff matches the judge on these single-module tasks because correct replicas write the same fix. It is not evidence for larger tasks. When no replica is a unique outlier, the promotion rule still picks replica 2.
+

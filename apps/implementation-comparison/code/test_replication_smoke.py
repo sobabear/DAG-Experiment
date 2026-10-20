@@ -973,3 +973,77 @@ def test_emit_behavior_macros_have_alphabetic_names():
     assert "\\newcommand{\\RateBehBEightFlatThreeQnaNoTool}{0.11}" in text
     assert "\\newcommand{\\RateBehBEightFlatThreeQnaToolGold}{0.88}" in text
     assert "\\newcommand{\\RateBehBEightFlatThreeQnaNoToolLie}{0.11}" in text
+
+
+# ---- counterfactual workspace selection (11) ----------------------------------
+
+
+def _load_selection():
+    spec = importlib.util.spec_from_file_location(
+        "selection_counterfactual", ROOT / "code" / "11_selection_counterfactual.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_ast_majority_picks_a_matching_replica_and_skips_the_dissenter():
+    sel = _load_selection()
+    assert sel.ast_majority_index(["a", "a", "b"]) == 0
+    assert sel.ast_majority_index(["b", "a", "a"]) == 1
+    assert sel.ast_majority_index(["a", "a", "a"]) is None
+    assert sel.ast_majority_index(["a", "b", "c"]) is None
+
+
+def test_choose_index_falls_back_to_last_replica_without_an_outlier():
+    sel = _load_selection()
+    assert sel.choose_index("last", ["a", "b", "a"], "t") == 2
+    assert sel.choose_index("ast", ["a", "a", "b"], "t") == 0
+    assert sel.choose_index("ast", ["a", "b", "c"], "t") == 2
+    first = sel.choose_index("random", ["a", "a", "a"], "task-1")
+    again = sel.choose_index("random", ["a", "a", "a"], "task-1")
+    other = sel.choose_index("random", ["a", "a", "a"], "task-2")
+    assert first == again and first in (0, 1, 2)
+    assert other in (0, 1, 2)
+
+
+def test_selection_summary_scores_the_promoted_replica():
+    sel = _load_selection()
+    rows = [
+        {"passes": [True, True, False], "signatures": ["a", "a", "b"], "actual": False, "poison_worker": 2, "task_id": "t1"},
+        {"passes": [False, True, True], "signatures": ["a", "a", "a"], "actual": True, "poison_worker": 0, "task_id": "t2"},
+    ]
+    summary = sel.summarize("poison-budget-7", "flat-majority-3", rows, seed=1)
+    assert summary["n"] == 2
+    assert summary["n_outlier"] == 1
+    assert summary["acc_last"] == 0.5
+    assert summary["acc_ast"] == 1.0
+    assert summary["acc_uniform"] == (2 / 3 + 2 / 3) / 2
+    assert summary["acc_actual"] == 0.5
+
+
+def test_selection_macros_have_alphabetic_names():
+    mac = _load_macros()
+    row = {
+        "run_id": "poison-budget-7", "system": "flat-majority-3",
+        "acc_actual": "0.72", "acc_last": "0.70", "acc_uniform": "0.80",
+        "acc_ast": "0.97", "acc_random": "0.81",
+    }
+    rate_row = {"run_id": "poison-budget-7", "system": "flat-majority-3", "task_set": "code", "condition": "all"}
+    text = mac.build_macros([rate_row], {}, selection={"poison-budget-7": [row]})
+    assert "\\newcommand{\\RateSelMainFlatThreeCodeAst}{0.97}" in text
+    assert "\\newcommand{\\RateSelBSevenFlatThreeCodeLast}{0.70}" in text
+    assert "\\newcommand{\\RateSelBSevenFlatThreeCodeUniform}{0.80}" in text
+
+
+def test_selection_table_lists_actual_last_uniform_and_ast():
+    exp = _load_export()
+    row = {
+        "system": "flat-majority-3", "acc_actual": "0.72", "acc_last": "0.70",
+        "acc_uniform": "0.80", "acc_ast": "0.97",
+    }
+    text = exp.export_selection([row], [dict(row, acc_ast="0.95")], "Cap.", "tab:sel")
+    assert "0.97" in text and "0.95" in text and "0.80" in text
+    assert "general-1" not in text
+    assert exp.export_selection([], [], "Cap.", "tab:sel") is None

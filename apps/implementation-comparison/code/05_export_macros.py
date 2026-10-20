@@ -30,6 +30,13 @@ RUN_TAGS = {
     "poison-budget-8": "BEight",
 }
 POSITION_WORDS = {0: "Zero", 1: "One", 2: "Two"}
+SELECTION_METRICS = (
+    ("acc_actual", "Actual"),
+    ("acc_last", "Last"),
+    ("acc_uniform", "Uniform"),
+    ("acc_random", "Random"),
+    ("acc_ast", "Ast"),
+)
 BEHAVIOR_METRICS = (
     ("no_tool", "NoTool"),
     ("tool_and_gold", "ToolGold"),
@@ -120,6 +127,7 @@ def build_macros(
     semantic: Optional[Dict[str, List[Dict[str, str]]]] = None,
     fallback: Optional[Dict[str, List[Dict[str, str]]]] = None,
     emit: Optional[Dict[str, List[Dict[str, str]]]] = None,
+    selection: Optional[Dict[str, List[Dict[str, str]]]] = None,
 ) -> str:
     rows = [r for r in rate_rows if r.get("condition", "all") == "all"]
     present = {r["run_id"] for r in rows}
@@ -263,6 +271,23 @@ def build_macros(
                     "RateBeh{}{}Qna{}".format(tag, ARM_TAGS[arm], suffix),
                     fmt_rate(r[column]),
                 )
+    for run, srows in (selection or {}).items():
+        if run not in RUN_TAGS:
+            continue
+        tags = [RUN_TAGS[run]] + (["Main"] if run == main else [])
+        for r in srows:
+            arm = r["system"]
+            if arm not in ARM_TAGS:
+                continue
+            for column, suffix in SELECTION_METRICS:
+                if r.get(column, "") in ("", None):
+                    continue
+                for tag in tags:
+                    _emit(
+                        lines,
+                        "RateSel{}{}Code{}".format(tag, ARM_TAGS[arm], suffix),
+                        fmt_rate(r[column]),
+                    )
     if main:
         _emit(lines, "MainRunName", main.replace("poison-", ""))
     return "\n".join(lines) + "\n"
@@ -297,7 +322,15 @@ def main() -> None:
         with path.open(encoding="utf-8", newline="") as handle:
             emit[run_id] = list(csv.DictReader(handle))
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(build_macros(rate_rows, paired, position, semantic, fallback, emit), encoding="utf-8")
+    selection: Dict[str, List[Dict[str, str]]] = {}
+    for path in sorted(PROCESSED.glob("selection_*.csv")):
+        run_id = path.stem[len("selection_"):]
+        with path.open(encoding="utf-8", newline="") as handle:
+            selection[run_id] = list(csv.DictReader(handle))
+    OUT.write_text(
+        build_macros(rate_rows, paired, position, semantic, fallback, emit, selection),
+        encoding="utf-8",
+    )
     print("wrote", OUT)
 
 

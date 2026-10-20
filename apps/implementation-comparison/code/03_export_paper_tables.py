@@ -392,6 +392,40 @@ def export_emit_behavior(
     return tabular(headers, body, caption, label)
 
 
+def export_selection(
+    rows_a: List[Dict[str, str]], rows_b: List[Dict[str, str]], caption: str, label: str
+) -> Optional[str]:
+    """Code accuracy under alternate promotions of an existing replica workspace."""
+    if not rows_a and not rows_b:
+        return None
+    headers = ["Arm"]
+    for tag in ("A", "B"):
+        headers += ["Actual " + tag, "Last " + tag, "Uniform " + tag, "AST " + tag]
+    body: List[List[str]] = []
+    for system, name in BUDGET_ARMS:
+        if system == "general-agent-system":
+            continue
+        found = False
+        cells = [name]
+        for rows in (rows_a, rows_b):
+            row = next((r for r in rows if r["system"] == system), None)
+            if row is None:
+                cells += ["--"] * 4
+                continue
+            found = True
+            cells += [
+                "{:.2f}".format(float(row["acc_actual"])),
+                "{:.2f}".format(float(row["acc_last"])),
+                "{:.2f}".format(float(row["acc_uniform"])),
+                "{:.2f}".format(float(row["acc_ast"])),
+            ]
+        if found:
+            body.append(cells)
+    if not body:
+        return None
+    return tabular(headers, body, caption, label)
+
+
 def export_replication(
     rows: List[Dict[str, str]], run_a: str, run_b: str, caption: str, label: str
 ) -> Optional[str]:
@@ -603,6 +637,18 @@ def main() -> None:
     )
     if emit:
         mapping["tab_emit.tex"] = emit
+    selection = export_selection(
+        read_csv("selection_poison-budget-7.csv"),
+        read_csv("selection_poison-budget-8.csv"),
+        "Code accuracy if a different replica workspace had been promoted ($n{=}100$). "
+        "Actual: the arm's recorded accuracy; Last: always replica~2; Uniform: expected "
+        "accuracy of drawing one replica at random; AST: a replica whose normalized source "
+        "matches another one when exactly one replica differs, and replica~2 otherwise. "
+        "A: \\texttt{gpt-5.6-luna}; B: \\texttt{gpt-6-luna}.",
+        "tab:selection",
+    )
+    if selection:
+        mapping["tab_selection.tex"] = selection
     present_runs = {r["run_id"] for r in rows}
     main_run = next((r for r in MAIN_RUN_CANDIDATES if r in present_runs), None)
     if main_run:

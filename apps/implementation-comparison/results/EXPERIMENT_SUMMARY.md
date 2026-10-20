@@ -187,7 +187,20 @@ Reading: **on code the judge's attribution is indistinguishable from a structura
 
 Caveat: the baseline works because these tasks are small single-module fixes where **correct replicas write the same fix**. It probably fails on larger tasks where correct replicas differ; there a judge or a behavioral comparison may be needed (not tested).
 
-### 4.5 Delivery-channel confound (budget-5 to budget-6)
+### 4.5 Counterfactual promotion (`code/11_selection_counterfactual.py`, no LLM call)
+
+On the saved code workspaces, accuracy if a different replica had been promoted (budget-7, budget-8 in parentheses):
+
+| Arm | Actual | Always replica 2 | Uniform draw | AST majority, else replica 2 |
+|-----|--------|------------------|--------------|------------------------------|
+| general-3 | 0.81 (0.72) | 0.83 (0.80) | 0.85 (0.81) | **0.97 (1.00)** |
+| flat-3 | 0.72 (0.70) | 0.78 (0.77) | 0.79 (0.79) | **0.98 (0.98)** |
+| judge-only | 1.00 (0.99) | 0.81 (0.77) | 0.80 (0.81) | **0.97 (0.99)** |
+| dag-bpd | 0.99 (0.98) | 0.75 (0.78) | 0.78 (0.80) | **0.97 (1.00)** |
+
+Reading: abandoning the last-replica fallback is not enough. A uniform draw stays near 0.80. Promoting a replica whose normalized source matches another replica, when exactly one replica differs, reaches the judge's accuracy on both models. The judge is not needed to choose the workspace on these tasks. The rule still promotes replica 2 when there is no unique outlier, and it depends on correct replicas writing the same source.
+
+### 4.6 Delivery-channel confound (budget-5 to budget-6)
 
 Single-loop propagation (QnA / code):
 
@@ -202,7 +215,7 @@ Single-loop propagation (QnA / code):
 - Budget-5's "general-3 detection = 0" was therefore a **delivery artifact**, not an architecture effect: the single loop rarely repeated the lie, so the vote had nothing to count.
 - The earlier "yonsei vs single-loop propagation" comparison is **withdrawn**. Yonsei's QnA propagation of 0.71 stays only as a standalone exploratory fact.
 
-### 4.6 Hierarchical `dag-yonsei` (exploratory)
+### 4.7 Hierarchical `dag-yonsei` (exploratory)
 
 | Run | QnA prop / det | code prop / det |
 |-----|----------------|-----------------|
@@ -213,13 +226,13 @@ Single-loop propagation (QnA / code):
 - But (a) the injection node differs from the other arms, (b) the rule was added after seeing results, and (c) with `none` or `document` conditions detection is 0 (no poison, nothing named), so **do not compare these metrics directly** with the other arms.
 - Huang et al. (2024) find a hierarchy the most resilient; the two views agree if resilience depends on whether downstream nodes have an independent signal (a hypothesis; shape and independence were not varied separately).
 
-### 4.7 Condition ablation and early pilots
+### 4.8 Condition ablation and early pilots
 
 - `none`: propagation about 0 for all arms, detection off (baseline behaves).
 - `document` (lie in a NOTES file): no effect on any arm in this suite (propagation about 0); models follow the source and tests. **Not interchangeable with the `agent` path.**
 - Budget-4 pilot (n = 20): a 3x budget helps isolation a lot, and on QnA majority is as good as or better than BPD. Injection strength differed per arm, so it is not cited as a main result.
 
-### 4.8 Second model: budget-8 (`gpt-6-luna`, budget-7 design)
+### 4.9 Second model: budget-8 (`gpt-6-luna`, budget-7 design)
 
 Comparison (budget-8 | budget-7, n = 100):
 
@@ -258,12 +271,12 @@ Reading: in this setup attribution depends on **how much the model follows the l
 
 | Earlier claim | Current status | Basis |
 |---------------|----------------|-------|
-| Direct "single loop vs three replicas" comparisons through budget-5 | **Withdrawn**; replaced by the same-channel system-prompt runs (budget-6 onward) | 4.5 |
-| Budget-5 "general-3 detection = 0 is a structural limit" | **Withdrawn** (delivery artifact) | 4.5 |
+| Direct "single loop vs three replicas" comparisons through budget-5 | **Withdrawn**; replaced by the same-channel system-prompt runs (budget-6 onward) | 4.6 |
+| Budget-5 "general-3 detection = 0 is a structural limit" | **Withdrawn** (delivery artifact) | 4.6 |
 | "Replication alone explains most of code isolation" (budget-6) | **Revised**: on code, majority replication drops to 0.30 to 0.52 depending on position; holds on QnA only | 4.2 |
 | "Naming the source on code needs a judge" | **Revised**: needs a comparison that reads the replicas' code (LLM judge or AST diff) | 4.4 |
-| "Yonsei propagates more/less than the single loop" | **Withdrawn** | 4.5 |
-| Limitation "the poisoned replica is always replica 0" | **Partly resolved** by budget-7/8 (judge-arm position effects not detected in budget-7, a lead in budget-8; about 33 tasks per cell) | 4.2, 4.8 |
+| "Yonsei propagates more/less than the single loop" | **Withdrawn** | 4.7 |
+| Limitation "the poisoned replica is always replica 0" | **Partly resolved** by budget-7/8 (judge-arm position effects not detected in budget-7, a lead in budget-8; about 33 tasks per cell) | 4.2, 4.9 |
 
 ---
 
@@ -272,11 +285,11 @@ Reading: in this setup attribution depends on **how much the model follows the l
 1. **Two models from one family, one attempt per task.** Run-to-run variance is estimated only from repeated earlier runs (for example BPD QnA recovery varied by a few points). Attempts >= 3 and a model from a different family are not done.
 2. **Tasks:** 20 templates expanded, single-module, explicit lie. Repository-scale tasks are untested (the AST baseline likely works only here).
 3. **Emit is the ceiling:** on code the poisoned replica states the lie in about 0.47 to 0.61 of runs (lexical proxy, may miss paraphrased compliance). No scheme can name the source above that.
-4. **The majority arms' fallback (last replica)** is a design choice. Other tie-breaks (random, test-based) may help the majority arms; the current results describe this implementation only.
+4. **The majority arms' fallback (last replica)** is a design choice. A uniform draw does not repair it (Section 4.5); an AST-majority promotion does, on these tasks, because correct replicas converge. That promotion still falls back to replica 2 when there is no unique outlier.
 5. **Judge position effects:** about 33 tasks per cell cannot rule out small effects (and one nominal effect appears in budget-8).
 6. **Cost matching is approximate:** judge arms add summarizer and judge calls; tokens are the only cost proxy.
 7. **Yonsei's rule is post hoc and its injection node differs**, so it is not comparable.
-8. **QnA Emit on the second model is explained** (Section 4.8): the proposal-worker prompt sends `gpt-6-luna` to the file, and it then answers with the source value. `gpt-5.6-luna` states the claim with or without a tool call.
+8. **QnA Emit on the second model is explained** (Section 4.9): the proposal-worker prompt sends `gpt-6-luna` to the file, and it then answers with the source value. `gpt-5.6-luna` states the claim with or without a tool call.
 
 ---
 
@@ -292,7 +305,7 @@ The paper was rewritten in English on budget-7 (main) and budget-8 (second model
 - Remaining `\todo` markers: AI-use disclosure and the Responsible NLP checklist; anonymous repository and raw-run archive.
 - Body 7 pages, 13 pages with references and appendix, no undefined references.
 
-Docs still to update with budget-7 and budget-8: `results/POISON_RESULTS.md` (new section), `docs/superpapers/BRIEFING-abstract-and-next-experiments.md` (Phase 1e), `HANDOFF.md`.
+`HANDOFF.md`, `results/POISON_RESULTS.md` §§12–14, and `docs/superpapers/BRIEFING-abstract-and-next-experiments.md` were updated to this state on 2026-10-20. Sections 1–11 of `POISON_RESULTS.md` remain the earlier Korean log.
 
 ### 7.2 Further experiments (priority order)
 
@@ -342,12 +355,13 @@ python code/07_position_breakdown.py poison-budget-7 --replicate-with poison-bud
 python code/08_semantic_baselines.py poison-budget-7       # about 8 min (about 1,200 replica test runs)
 python code/09_majority_fallback.py poison-budget-7
 python code/10_qna_emit_behavior.py poison-budget-7
+python code/11_selection_counterfactual.py poison-budget-7   # about 4 min per run
 python code/05_export_macros.py
 python code/03_export_paper_tables.py
 # budget-8: same steps with poison-budget-8 (07 uses --replicate-with poison-budget-7)
 
 # Tests
-python -m pytest tests code -q        # 413 passed
+python -m pytest tests code -q        # 418 passed
 
 # Paper
 cd paper && pdflatex paper.tex && latexmk -pdf paper.tex
@@ -374,4 +388,4 @@ Notes:
 
 - Last commit: `6a5a283` (paper and docs based on budget-6-retried). Everything since is **uncommitted** (no commit has been requested).
 - Uncommitted: `src/impl_comparison/poison_compare.py` (position balancing, task timeout), `src/impl_comparison/llm.py` (gpt-6 compatibility), `tests/test_poison.py`, `tests/test_llm.py`, `code/01, 03, 05`, new `code/07, 08, 09`, `code/test_replication_smoke.py`, `data/processed/*` (position, replication, semantic, fallback, paired CSVs and regenerated rates), `output/`, `paper/paper.tex`, and raw runs `results/poison-budget-7/` and `results/poison-budget-8/`.
-- Tests: `pytest tests code` gives 413 passed.
+- Tests: `pytest tests code` gives 418 passed (2026-10-20).

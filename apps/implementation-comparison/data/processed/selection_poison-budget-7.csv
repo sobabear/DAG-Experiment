@@ -1,0 +1,5 @@
+run_id,system,n,n_outlier,acc_actual,acc_last,acc_ast,acc_random,acc_uniform
+poison-budget-7,general-majority-3,100,56,0.81,0.83,0.97,0.83,0.8500000000000003
+poison-budget-7,flat-majority-3,100,71,0.72,0.78,0.98,0.78,0.7866666666666667
+poison-budget-7,judge-only-3,100,60,1.0,0.81,0.97,0.8,0.8000000000000003
+poison-budget-7,dag-bpd,100,69,0.99,0.75,0.97,0.77,0.7800000000000001
